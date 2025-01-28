@@ -71,12 +71,12 @@ func (s *Service) GetProject(id int) (*Project, error) {
 	return project, err
 }
 
-func (s *Service) UpdateProject(id int, name, summary, desc, status string) error {
+func (s *Service) UpdateProject(p *Project) error {
 	result, err := s.db.Exec(`
 		UPDATE projects 
 		SET name = ?, summary = ?, desc = ?, status = ?, date_updated = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, name, summary, desc, status, id)
+	`, p.Name, p.Summary, p.Desc, p.Status, p.ID)
 	if err != nil {
 		return err
 	}

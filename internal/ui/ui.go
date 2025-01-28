@@ -12,6 +12,7 @@ type Service interface {
 	ListProjects() ([]service.Project, error)
 	DeleteProject(id int) error
 	CreateProject(*service.Project) error
+	UpdateProject(*service.Project) error
 }
 
 // type Project struct {
@@ -33,7 +34,6 @@ type Model struct {
 	service  Service
 	projects []service.Project
 	err      error
-	form     *huh.Form
 }
 
 var appStyle = lipgloss.NewStyle().Margin(1, 2)
@@ -51,7 +51,7 @@ func NewModel(svc Service) (*Model, error) {
 
 	delegate := list.NewDefaultDelegate()
 	projectList := list.New(items, delegate, 80, 20)
-	projectList.Title = "Projects"
+	projectList.Title = "Addae"
 	projectList.SetShowHelp(true)
 
 	return &Model{
@@ -72,45 +72,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
-		case "n":
-			p := createProjectForm(m)
-			err := m.service.CreateProject(&p)
-			// refresh projects
-			projects, err := m.service.ListProjects()
-			if err != nil {
-				m.err = err
-				return m, nil
-			}
-			items := make([]list.Item, len(projects))
-			for i, p := range projects {
-				items[i] = p
-			}
-			m.list.SetItems(items)
 
-			// Handle new project (implement as needed)
-			return m, nil
-		case "d":
-			if _, ok := m.list.SelectedItem().(service.Project); ok {
-				// err := m.service.DeleteProject(i.ID)
-				// if err != nil {
-				// 	m.err = err
-				// 	return m, nil
-				// }
-				// Refresh projects
-				projects, err := m.service.ListProjects()
+			// Create new project
+		case "n":
+			p := createProjectForm()
+			if p != nil {
+				err := m.service.CreateProject(p)
 				if err != nil {
 					m.err = err
 					return m, nil
 				}
-				items := make([]list.Item, len(projects))
-				for i, p := range projects {
-					items[i] = p
+			}
+
+		// Update project
+		case "u":
+			if i, ok := m.list.SelectedItem().(service.Project); ok {
+				p := updateProjectForm(i)
+				if p != nil {
+					err := m.service.UpdateProject(p)
+					if err != nil {
+						m.err = err
+						return m, nil
+					}
 				}
-				m.list.SetItems(items)
+			}
+			// Delete project
+		case "d":
+			confirmDelete := confirmDelete(m)
+			if confirmDelete {
+				if i, ok := m.list.SelectedItem().(service.Project); ok {
+					err := m.service.DeleteProject(i.ID)
+					if err != nil {
+						m.err = err
+						return m, nil
+					}
+				}
+
 			}
 		}
 	}
 
+	// refresh projects
+	projects, err := m.service.ListProjects()
+	if err != nil {
+		m.err = err
+		return m, nil
+	}
+	items := make([]list.Item, len(projects))
+	for i, p := range projects {
+		items[i] = p
+	}
+
+	m.list.SetItems(items)
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
 	return m, cmd
@@ -123,25 +136,94 @@ func (m Model) View() string {
 	return appStyle.Render(m.list.View())
 }
 
-func createProjectForm(m Model) service.Project {
-	var p service.Project
+func confirmDelete(m Model) bool {
+	var confirm bool
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Are you sure you want to delete?").
+				Value(&confirm),
+		),
+	)
+	form.Run()
+	return confirm
+
+}
+
+func confirmUpdate(m Model) bool {
+	var confirm bool
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Are you sure you want to update?").
+				Value(&confirm),
+		),
+	)
+	form.Run()
+	return confirm
+}
+
+func updateProjectForm(p service.Project) *service.Project {
 	var save bool
-	m.form = huh.NewForm(
+	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("name").
+				Title("Name").
+				Placeholder("Enter name of project").
+				Value(&p.Name).
+				Accessor(huh.NewPointerAccessor(&p.Name)),
+			huh.NewText().
+				CharLimit(255).
+				Title("Summary").
+				Placeholder("Enter overview of project").
+				Value(&p.Summary).
+				Accessor(huh.NewPointerAccessor(&p.Summary)),
+			huh.NewText().
+				Title("Description (Optional)").
+				Placeholder("Enter detailed description of project").
+				Value(&p.Desc).
+				Accessor(huh.NewPointerAccessor(&p.Desc)),
+			huh.NewSelect[string]().Title("Status").
+				Options(
+					huh.NewOption("Todo", "todo"),
+					huh.NewOption("In Progress", "in progress"),
+					huh.NewOption("Done", "completed"),
+					huh.NewOption("Archived", "archived"),
+				).
+				Value(&p.Status).
+				Accessor(huh.NewPointerAccessor(&p.Status)),
+			huh.NewConfirm().
+				Affirmative("Save").
+				Negative("Cancel").
+				Value(&save),
+		),
+	)
+	form.Run()
+	if !save {
+		return nil
+	}
+	return &p
+}
+
+func createProjectForm() *service.Project {
+	var p service.Project
+	var save bool
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Name").
 				Placeholder("Enter name of project").
 				Value(&p.Name),
 			huh.NewText().
 				CharLimit(255).
-				Title("summary").
+				Title("Summary").
 				Placeholder("Enter overview of project").
 				Value(&p.Summary),
 			huh.NewText().
 				Title("Description (Optional)").
 				Placeholder("Enter detailed description of project").
 				Value(&p.Desc),
-			huh.NewSelect[string]().Title("status").
+			huh.NewSelect[string]().Title("Status").
 				Options(
 					huh.NewOption("Todo", "todo"),
 					huh.NewOption("In Progress", "in progress"),
@@ -155,6 +237,9 @@ func createProjectForm(m Model) service.Project {
 				Value(&save),
 		),
 	)
-	m.form.Run()
-	return p
+	form.Run()
+	if !save {
+		return nil
+	}
+	return &p
 }
