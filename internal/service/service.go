@@ -50,11 +50,11 @@ type Log struct {
 }
 
 // Project CRUD operations
-func (s *Service) CreateProject(name, summary, desc string) error {
+func (s *Service) CreateProject(p *Project) error {
 	_, err := s.db.Exec(`
 		INSERT INTO projects (name, summary, desc, status, date_created, date_updated)
-		VALUES (?, ?, ?, 'todo', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-	`, name, summary, desc)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`, p.Name, p.Summary, p.Desc, p.Status)
 	return err
 }
 

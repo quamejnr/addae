@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/quamejnr/addae/internal/service"
 )
@@ -10,6 +11,7 @@ import (
 type Service interface {
 	ListProjects() ([]service.Project, error)
 	DeleteProject(id int) error
+	CreateProject(*service.Project) error
 }
 
 // type Project struct {
@@ -31,11 +33,12 @@ type Model struct {
 	service  Service
 	projects []service.Project
 	err      error
+	form     *huh.Form
 }
 
 var appStyle = lipgloss.NewStyle().Margin(1, 2)
 
-func New(svc Service) (*Model, error) {
+func NewModel(svc Service) (*Model, error) {
 	projects, err := svc.ListProjects()
 	if err != nil {
 		return nil, err
@@ -63,12 +66,27 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "n":
+			p := createProjectForm(m)
+			err := m.service.CreateProject(&p)
+			// refresh projects
+			projects, err := m.service.ListProjects()
+			if err != nil {
+				m.err = err
+				return m, nil
+			}
+			items := make([]list.Item, len(projects))
+			for i, p := range projects {
+				items[i] = p
+			}
+			m.list.SetItems(items)
+
 			// Handle new project (implement as needed)
 			return m, nil
 		case "d":
@@ -103,4 +121,40 @@ func (m Model) View() string {
 		return m.err.Error()
 	}
 	return appStyle.Render(m.list.View())
+}
+
+func createProjectForm(m Model) service.Project {
+	var p service.Project
+	var save bool
+	m.form = huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("name").
+				Placeholder("Enter name of project").
+				Value(&p.Name),
+			huh.NewText().
+				CharLimit(255).
+				Title("summary").
+				Placeholder("Enter overview of project").
+				Value(&p.Summary),
+			huh.NewText().
+				Title("Description (Optional)").
+				Placeholder("Enter detailed description of project").
+				Value(&p.Desc),
+			huh.NewSelect[string]().Title("status").
+				Options(
+					huh.NewOption("Todo", "todo"),
+					huh.NewOption("In Progress", "in progress"),
+					huh.NewOption("Done", "completed"),
+					huh.NewOption("Archived", "archived"),
+				).
+				Value(&p.Status),
+			huh.NewConfirm().
+				Affirmative("Save").
+				Negative("Cancel").
+				Value(&save),
+		),
+	)
+	m.form.Run()
+	return p
 }

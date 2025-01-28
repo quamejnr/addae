@@ -27,7 +27,7 @@ func createTables(db *sql.DB) error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT check(length(name) <= 100) NOT NULL,
       summary TEXT CHECK(length(summary) <= 255),
-			desc TEXT,
+			desc TEXT DEFAULT '',
 			status TEXT CHECK(status IN ('todo', 'in progress', 'completed', 'archived')) NOT NULL DEFAULT 'todo',
 			date_created DATETIME DEFAULT CURRENT_TIMESTAMP,
 			date_updated DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -43,7 +43,7 @@ func createTables(db *sql.DB) error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			project_id INTEGER,
 			title TEXT check(length(title) <= 100) NOT NULL,
-			desc TEXT,
+			desc TEXT DEFAULT '',
 			status TEXT CHECK(status IN ('todo', 'in progress', 'completed', 'archived')) NOT NULL DEFAULT 'todo',
 			date_created DATETIME DEFAULT CURRENT_TIMESTAMP,
 			date_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -60,7 +60,7 @@ func createTables(db *sql.DB) error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			project_id INTEGER,
 			title TEXT check(length(title) <= 100),
-			desc TEXT,
+			desc TEXT DEFAULT '',
 			date_created DATETIME DEFAULT CURRENT_TIMESTAMP,
 			date_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE

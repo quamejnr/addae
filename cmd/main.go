@@ -20,7 +20,7 @@ func main() {
 	svc := service.NewService(database)
 
 	// Initialize TUI
-	model, err := ui.New(svc)
+	model, err := ui.NewModel(svc)
 	if err != nil {
 		log.Fatal(err)
 	}
