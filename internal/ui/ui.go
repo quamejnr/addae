@@ -98,7 +98,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Delete project
 		case "d":
-			confirmDelete := confirmDelete(m)
+			confirmDelete := confirmDelete()
 			if confirmDelete {
 				if i, ok := m.list.SelectedItem().(service.Project); ok {
 					err := m.service.DeleteProject(i.ID)
@@ -136,7 +136,7 @@ func (m Model) View() string {
 	return appStyle.Render(m.list.View())
 }
 
-func confirmDelete(m Model) bool {
+func confirmDelete() bool {
 	var confirm bool
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -148,19 +148,6 @@ func confirmDelete(m Model) bool {
 	form.Run()
 	return confirm
 
-}
-
-func confirmUpdate(m Model) bool {
-	var confirm bool
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Are you sure you want to update?").
-				Value(&confirm),
-		),
-	)
-	form.Run()
-	return confirm
 }
 
 func updateProjectForm(p service.Project) *service.Project {
