@@ -2,73 +2,66 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
+	"io"
 	"log"
+	"os"
+
+	"github.com/pressly/goose/v3"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
-func InitDB(file string) *sql.DB {
-	db, err := sql.Open("sqlite3", file)
-	if err != nil {
-		log.Fatal(err)
+func InitDB(dbPath string) (*sql.DB, error) {
+	// Check if database file exists
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		// Create the database file
+		file, err := os.Create(dbPath)
+		if err != nil {
+			return nil, fmt.Errorf("error creating database file: %w", err)
+		}
+		file.Close()
 	}
 
-	err = createTables(db)
+	// Open the database
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("error opening database: %w", err)
 	}
 
-	return db
+	// Test the connection
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("error connecting to database: %w", err)
+	}
+
+	// Enable foreign key support
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("error enabling foreign keys: %w", err)
+	}
+
+	return db, nil
 }
 
-func createTables(db *sql.DB) error {
+func RunMigrations(db *sql.DB) error {
+	// goose.SetBaseFS(embedMigrations)
 
-	// Create projects table
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS projects (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT check(length(name) <= 100) NOT NULL,
-      summary TEXT CHECK(length(summary) <= 255),
-			desc TEXT DEFAULT '',
-			status TEXT CHECK(status IN ('todo', 'in progress', 'completed', 'archived')) NOT NULL DEFAULT 'todo',
-			date_created DATETIME DEFAULT CURRENT_TIMESTAMP,
-			date_updated DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		return err
+
+	if err := goose.SetDialect("sqlite3"); err != nil {
+    return fmt.Errorf("migration failed: %w", err)
 	}
 
-	// Create tasks table
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS tasks (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			project_id INTEGER,
-			title TEXT check(length(title) <= 100) NOT NULL,
-			desc TEXT DEFAULT '',
-			status TEXT CHECK(status IN ('todo', 'in progress', 'completed', 'archived')) NOT NULL DEFAULT 'todo',
-			date_created DATETIME DEFAULT CURRENT_TIMESTAMP,
-			date_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-		)
-	`)
-	if err != nil {
-		return err
+  // temporarily disabling logs in the goose.Up function after migration
+  log.SetOutput(io.Discard)
+
+	if err := goose.Up(db, "internal/db/migrations/"); err != nil {
+    return fmt.Errorf("migration failed: %w", err)
 	}
 
-	// Create logs table
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS logs (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			project_id INTEGER,
-			title TEXT check(length(title) <= 100),
-			desc TEXT DEFAULT '',
-			date_created DATETIME DEFAULT CURRENT_TIMESTAMP,
-			date_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-		)
-	`)
-	if err != nil {
-		return err
-	}
-
-	return nil
+  // restore logs to stdout
+  log.SetOutput(os.Stdout)
+  return nil
 }
+

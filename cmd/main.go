@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"fmt"
 
 	"github.com/quamejnr/addae/internal/service"
 	"github.com/quamejnr/addae/internal/ui"
@@ -13,8 +13,18 @@ import (
 
 func main() {
 	// Initialize database
-	database := db.InitDB("./addae.db")
+	database, err := db.InitDB("./addae.db")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	defer database.Close()
+
+	// run migrations
+	if err := db.RunMigrations(database); err != nil {
+		fmt.Println(err)
+		return
+	}
 
 	// Initialize service with database
 	svc := service.NewService(database)
@@ -22,14 +32,17 @@ func main() {
 	// Initialize TUI
 	model, err := ui.NewModel(svc)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		return
 	}
 
 	// Start TUI program
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		return
 	}
+}
 
 // 	// Command line flags
 // 	createProjectCmd := flag.NewFlagSet("create-project", flag.ExitOnError)
@@ -99,4 +112,3 @@ func main() {
 // 		fmt.Println("Expected subcommands: create-project, create-task, create-log, list-projects")
 // 		os.Exit(1)
 // 	}
-}
