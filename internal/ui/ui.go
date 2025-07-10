@@ -23,6 +23,7 @@ const (
 	listView viewState = iota
 	projectView
 	updateView
+	createView
 )
 
 type Model struct {
@@ -96,12 +97,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			case "n":
-				p := createProjectForm()
-				if p != nil {
-					if err := m.service.CreateProject(p); err != nil {
-						m.err = err
-					}
-				}
+				m.state = createView
+				m.form = createProjectForm()
+				return m, m.form.Init()
 			case "d":
 				if confirmDelete() {
 					if i, ok := m.list.SelectedItem().(service.Project); ok {
@@ -164,6 +162,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = projectView
 			m.form = nil
 		}
+	case createView:
+		// Handle create form updates
+		var formCmd tea.Cmd
+		var updatedForm tea.Model
+		updatedForm, formCmd = m.form.Update(msg)
+		m.form = updatedForm.(*huh.Form)
+		cmd = formCmd
+
+		if m.form.State == huh.StateAborted {
+			m.state = listView
+			m.form = nil
+		} else if m.form.State == huh.StateCompleted {
+			var p service.Project
+			p.Name = m.form.GetString("name")
+			p.Summary = m.form.GetString("summary")
+			p.Desc = m.form.GetString("desc")
+			p.Status = m.form.GetString("status")
+			if err := m.service.CreateProject(&p); err != nil {
+				m.err = err
+			}
+			m.state = listView
+			m.form = nil
+		}
 	}
 
 	return m, cmd
@@ -179,6 +200,8 @@ func (m Model) View() string {
 		return m.form.View()
 	case projectView:
 		return m.projectView()
+	case createView:
+		return m.form.View()
 	default: // listView
 		return appStyle.Render(m.list.View())
 	}
@@ -259,41 +282,34 @@ func updateProjectForm(p service.Project) *huh.Form {
 	)
 }
 
-func createProjectForm() *service.Project {
-	var p service.Project
-	var save bool
-	form := huh.NewForm(
+func createProjectForm() *huh.Form {
+	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Name").
-				Placeholder("Enter name of project").
-				Value(&p.Name),
+				Key("name").
+				Placeholder("Enter name of project"),
 			huh.NewText().
 				CharLimit(255).
 				Title("Summary").
-				Placeholder("Enter overview of project").
-				Value(&p.Summary),
+				Key("summary").
+				Placeholder("Enter overview of project"),
 			huh.NewText().
 				Title("Description (Optional)").
-				Placeholder("Enter detailed description of project").
-				Value(&p.Desc),
+				Key("desc").
+				Placeholder("Enter detailed description of project"),
 			huh.NewSelect[string]().Title("Status").
+				Key("status").
 				Options(
 					huh.NewOption("Todo", "todo"),
 					huh.NewOption("In Progress", "in progress"),
 					huh.NewOption("Done", "completed"),
 					huh.NewOption("Archived", "archived"),
-				).
-				Value(&p.Status),
+				),
 			huh.NewConfirm().
 				Affirmative("Save").
 				Negative("Cancel").
-				Value(&save),
+				Key("saveConfirm"),
 		),
 	)
-	form.Run()
-	if !save {
-		return nil
-	}
-	return &p
 }
