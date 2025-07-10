@@ -22,21 +22,8 @@ type viewState int
 const (
 	listView viewState = iota
 	projectView
+	updateView
 )
-
-// type Project struct {
-// 	ID          int
-// 	Name        string
-// 	Description string
-// 	Status      string
-// 	DateCreated time.Time
-// 	Tasks       []Task
-// 	Logs        []Log
-// }
-//
-// func (p Project) Title() string       { return p.Name }
-// func (p Project) Description() string { return p.Status }
-// func (p Project) FilterValue() string { return p.Name }
 
 type Model struct {
 	list            list.Model
@@ -46,6 +33,7 @@ type Model struct {
 	projects        []service.Project
 	tasks           []service.Task
 	logs            []service.Log
+	form            *huh.Form
 	err             error
 }
 
@@ -76,114 +64,129 @@ func NewModel(svc Service) (*Model, error) {
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+  return tea.Batch(tea.EnterAltScreen)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch m.state {
-		case projectView:
+	var cmd tea.Cmd
+
+	switch m.state {
+	case listView:
+		// Handle list view updates
+		m.list, cmd = m.list.Update(msg)
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
 			switch msg.String() {
-			case "q", "ctrl+c", "esc", "b":
-				m.state = listView
-				m.selectedProject = nil
-				return m, nil
-			}
-		case listView:
-			switch msg.String() {
-			case "q", "ctrl+c":
-				return m, tea.Quit
 			case "enter":
 				if i, ok := m.list.SelectedItem().(service.Project); ok {
 					m.state = projectView
 					m.selectedProject = &i
+					// Load tasks and logs for the selected project
 					tasks, err := m.service.ListProjectTasks(i.ID)
 					if err != nil {
 						m.err = err
-						return m, nil
+					} else {
+						m.tasks = tasks
 					}
-					m.tasks = tasks
 					logs, err := m.service.ListProjectLogs(i.ID)
 					if err != nil {
 						m.err = err
-						return m, nil
+					} else {
+						m.logs = logs
 					}
-					m.logs = logs
 				}
-				return m, nil
-			// Create new project
 			case "n":
 				p := createProjectForm()
 				if p != nil {
-					err := m.service.CreateProject(p)
-					if err != nil {
+					if err := m.service.CreateProject(p); err != nil {
 						m.err = err
-						return m, nil
 					}
 				}
-
-			// Update project
-			case "u":
-				if i, ok := m.list.SelectedItem().(service.Project); ok {
-					p := updateProjectForm(i)
-					if p != nil {
-						err := m.service.UpdateProject(p)
-						if err != nil {
-							m.err = err
-							return m, nil
-						}
-					}
-				}
-				// Delete project
 			case "d":
-				confirmDelete := confirmDelete()
-				if confirmDelete {
+				if confirmDelete() {
 					if i, ok := m.list.SelectedItem().(service.Project); ok {
-						err := m.service.DeleteProject(i.ID)
-						if err != nil {
+						if err := m.service.DeleteProject(i.ID); err != nil {
 							m.err = err
-							return m, nil
 						}
 					}
-
 				}
+			case "q", "ctrl+c":
+				return m, tea.Quit
 			}
+		}
+		// Refresh projects list after potential changes
+		projects, err := m.service.ListProjects()
+		if err != nil {
+			m.err = err
+		} else {
+			items := make([]list.Item, len(projects))
+			for i, p := range projects {
+				items[i] = p
+			}
+			m.list.SetItems(items)
+		}
+
+	case projectView:
+		// Handle project view updates
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "u":
+				m.state = updateView
+				m.form = updateProjectForm(*m.selectedProject)
+				return m, m.form.Init()
+			case "esc", "b", "q", "ctrl+c":
+				m.state = listView
+				m.selectedProject = nil
+			}
+		}
+
+	case updateView:
+		// Handle update form updates
+		var formCmd tea.Cmd
+		var updatedForm tea.Model
+		updatedForm, formCmd = m.form.Update(msg)
+		m.form = updatedForm.(*huh.Form)
+		cmd = formCmd
+
+		if m.form.State == huh.StateAborted {
+			m.state = projectView
+			m.form = nil
+		} else if m.form.State == huh.StateCompleted {
+			p := m.selectedProject
+			p.Name = m.form.GetString("name")
+			p.Summary = m.form.GetString("summary")
+			p.Desc = m.form.GetString("desc")
+			p.Status = m.form.GetString("status")
+			if err := m.service.UpdateProject(p); err != nil {
+				m.err = err
+			}
+			m.state = projectView
+			m.form = nil
 		}
 	}
 
-	// refresh projects
-	projects, err := m.service.ListProjects()
-	if err != nil {
-		m.err = err
-		return m, nil
-	}
-	items := make([]list.Item, len(projects))
-	for i, p := range projects {
-		items[i] = p
-	}
-
-	m.list.SetItems(items)
-	var cmd tea.Cmd
-	m.list, cmd = m.list.Update(msg)
 	return m, cmd
 }
 
 func (m Model) View() string {
 	if m.err != nil {
-		return m.err.Error()
+		return "Error: " + m.err.Error()
 	}
+
 	switch m.state {
+	case updateView:
+		return m.form.View()
 	case projectView:
 		return m.projectView()
-	default:
+	default: // listView
 		return appStyle.Render(m.list.View())
 	}
 }
 
 func (m *Model) projectView() string {
 	if m.selectedProject == nil {
-		return "No project selected"
+		return "No project selected."
 	}
 
 	var s string
@@ -218,55 +221,42 @@ func confirmDelete() bool {
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
-				Title("Are you sure you want to delete?").
+				Title("Are you sure you want to delete this project?").
 				Value(&confirm),
 		),
 	)
 	form.Run()
 	return confirm
-
 }
 
-func updateProjectForm(p service.Project) *service.Project {
-	var save bool
-	form := huh.NewForm(
+func updateProjectForm(p service.Project) *huh.Form {
+	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Name").
-				Placeholder("Enter name of project").
-				Value(&p.Name).
-				Accessor(huh.NewPointerAccessor(&p.Name)),
+				Key("name").
+				Value(&p.Name),
 			huh.NewText().
-				CharLimit(255).
 				Title("Summary").
-				Placeholder("Enter overview of project").
-				Value(&p.Summary).
-				Accessor(huh.NewPointerAccessor(&p.Summary)),
+				Key("summary").
+				CharLimit(255).
+				Value(&p.Summary),
 			huh.NewText().
-				Title("Description (Optional)").
-				Placeholder("Enter detailed description of project").
-				Value(&p.Desc).
-				Accessor(huh.NewPointerAccessor(&p.Desc)),
-			huh.NewSelect[string]().Title("Status").
+				Title("Description").
+				Key("desc").
+				Value(&p.Desc),
+			huh.NewSelect[string]().
+				Title("Status").
+				Key("status").
 				Options(
 					huh.NewOption("Todo", "todo"),
 					huh.NewOption("In Progress", "in progress"),
-					huh.NewOption("Done", "completed"),
+					huh.NewOption("Completed", "completed"),
 					huh.NewOption("Archived", "archived"),
 				).
-				Value(&p.Status).
-				Accessor(huh.NewPointerAccessor(&p.Status)),
-			huh.NewConfirm().
-				Affirmative("Save").
-				Negative("Cancel").
-				Value(&save),
+				Value(&p.Status),
 		),
 	)
-	form.Run()
-	if !save {
-		return nil
-	}
-	return &p
 }
 
 func createProjectForm() *service.Project {
