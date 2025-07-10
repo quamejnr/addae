@@ -13,7 +13,16 @@ type Service interface {
 	DeleteProject(id int) error
 	CreateProject(*service.Project) error
 	UpdateProject(*service.Project) error
+	ListProjectTasks(projectID int) ([]service.Task, error)
+	ListProjectLogs(projectID int) ([]service.Log, error)
 }
+
+type viewState int
+
+const (
+	listView viewState = iota
+	projectView
+)
 
 // type Project struct {
 // 	ID          int
@@ -30,10 +39,14 @@ type Service interface {
 // func (p Project) FilterValue() string { return p.Name }
 
 type Model struct {
-	list     list.Model
-	service  Service
-	projects []service.Project
-	err      error
+	list            list.Model
+	service         Service
+	state           viewState
+	selectedProject *service.Project
+	projects        []service.Project
+	tasks           []service.Task
+	logs            []service.Log
+	err             error
 }
 
 var appStyle = lipgloss.NewStyle().Margin(1, 2)
@@ -57,6 +70,7 @@ func NewModel(svc Service) (*Model, error) {
 	return &Model{
 		list:     projectList,
 		service:  svc,
+		state:    listView,
 		projects: projects,
 	}, nil
 }
@@ -66,48 +80,74 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "ctrl+c":
-			return m, tea.Quit
-
-			// Create new project
-		case "n":
-			p := createProjectForm()
-			if p != nil {
-				err := m.service.CreateProject(p)
-				if err != nil {
-					m.err = err
-					return m, nil
-				}
+		switch m.state {
+		case projectView:
+			switch msg.String() {
+			case "q", "ctrl+c", "esc", "b":
+				m.state = listView
+				m.selectedProject = nil
+				return m, nil
 			}
-
-		// Update project
-		case "u":
-			if i, ok := m.list.SelectedItem().(service.Project); ok {
-				p := updateProjectForm(i)
-				if p != nil {
-					err := m.service.UpdateProject(p)
-					if err != nil {
-						m.err = err
-						return m, nil
-					}
-				}
-			}
-			// Delete project
-		case "d":
-			confirmDelete := confirmDelete()
-			if confirmDelete {
+		case listView:
+			switch msg.String() {
+			case "q", "ctrl+c":
+				return m, tea.Quit
+			case "enter":
 				if i, ok := m.list.SelectedItem().(service.Project); ok {
-					err := m.service.DeleteProject(i.ID)
+					m.state = projectView
+					m.selectedProject = &i
+					tasks, err := m.service.ListProjectTasks(i.ID)
+					if err != nil {
+						m.err = err
+						return m, nil
+					}
+					m.tasks = tasks
+					logs, err := m.service.ListProjectLogs(i.ID)
+					if err != nil {
+						m.err = err
+						return m, nil
+					}
+					m.logs = logs
+				}
+				return m, nil
+			// Create new project
+			case "n":
+				p := createProjectForm()
+				if p != nil {
+					err := m.service.CreateProject(p)
 					if err != nil {
 						m.err = err
 						return m, nil
 					}
 				}
 
+			// Update project
+			case "u":
+				if i, ok := m.list.SelectedItem().(service.Project); ok {
+					p := updateProjectForm(i)
+					if p != nil {
+						err := m.service.UpdateProject(p)
+						if err != nil {
+							m.err = err
+							return m, nil
+						}
+					}
+				}
+				// Delete project
+			case "d":
+				confirmDelete := confirmDelete()
+				if confirmDelete {
+					if i, ok := m.list.SelectedItem().(service.Project); ok {
+						err := m.service.DeleteProject(i.ID)
+						if err != nil {
+							m.err = err
+							return m, nil
+						}
+					}
+
+				}
 			}
 		}
 	}
@@ -133,7 +173,44 @@ func (m Model) View() string {
 	if m.err != nil {
 		return m.err.Error()
 	}
-	return appStyle.Render(m.list.View())
+	switch m.state {
+	case projectView:
+		return m.projectView()
+	default:
+		return appStyle.Render(m.list.View())
+	}
+}
+
+func (m *Model) projectView() string {
+	if m.selectedProject == nil {
+		return "No project selected"
+	}
+
+	var s string
+	s += lipgloss.NewStyle().Bold(true).Render(m.selectedProject.Name) + "\n"
+	s += "Status: " + m.selectedProject.Status + "\n"
+	s += "Description: " + m.selectedProject.Desc + "\n\n"
+
+	s += lipgloss.NewStyle().Bold(true).Render("Tasks") + "\n"
+	if len(m.tasks) == 0 {
+		s += "No tasks for this project.\n"
+	} else {
+		for _, t := range m.tasks {
+			s += "- " + t.Title + " (" + t.Status + ")\n"
+		}
+	}
+	s += "\n"
+
+	s += lipgloss.NewStyle().Bold(true).Render("Logs") + "\n"
+	if len(m.logs) == 0 {
+		s += "No logs for this project.\n"
+	} else {
+		for _, l := range m.logs {
+			s += "- " + l.Title + "\n"
+		}
+	}
+
+	return appStyle.Render(s)
 }
 
 func confirmDelete() bool {
