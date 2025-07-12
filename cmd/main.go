@@ -21,7 +21,7 @@ func main() {
 	defer database.Close()
 
 	// run migrations
-	if err := db.RunMigrations(database); err != nil {
+	if err := db.RunMigrations(database, "internal/db/migrations/"); err != nil {
 		fmt.Println(err)
 		return
 	}

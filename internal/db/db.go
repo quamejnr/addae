@@ -45,7 +45,7 @@ func InitDB(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
-func RunMigrations(db *sql.DB) error {
+func RunMigrations(db *sql.DB, migrationsDir string) error {
 	// goose.SetBaseFS(embedMigrations)
 
 
@@ -56,7 +56,7 @@ func RunMigrations(db *sql.DB) error {
   // temporarily disabling logs in the goose.Up function after migration
   log.SetOutput(io.Discard)
 
-	if err := goose.Up(db, "internal/db/migrations/"); err != nil {
+	if err := goose.Up(db, migrationsDir); err != nil {
     return fmt.Errorf("migration failed: %w", err)
 	}
 
