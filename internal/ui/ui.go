@@ -85,29 +85,32 @@ func (m Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
 
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter":
-			if selected := m.list.Index(); selected >= 0 {
-				coreCmd := m.CoreModel.SelectProject(selected)
-				if coreCmd == CoreShowError {
-					return m, nil
+    // don't allow these key presses during filtering
+	if m.list.FilterState().String() != "filtering" {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "enter":
+				if selected := m.list.Index(); selected >= 0 {
+					coreCmd := m.CoreModel.SelectProject(selected)
+					if coreCmd == CoreShowError {
+						return m, nil
+					}
 				}
-			}
-		case "n":
-			m.CoreModel.GoToCreateView()
-			m.form = createProjectForm()
-			return m, m.form.Init()
-		case "d":
-			if selected := m.list.Index(); selected >= 0 {
-				// Switch to delete view and show confirmation
-				m.CoreModel.GoToDeleteView()
-				m.form = confirmDeleteForm()
+			case "n":
+				m.CoreModel.GoToCreateView()
+				m.form = createProjectForm()
 				return m, m.form.Init()
+			case "d":
+				if selected := m.list.Index(); selected >= 0 {
+					// Switch to delete view and show confirmation
+					m.CoreModel.GoToDeleteView()
+					m.form = confirmDeleteForm()
+					return m, m.form.Init()
+				}
+			case "q", "ctrl+c":
+				return m, tea.Quit
 			}
-		case "q", "ctrl+c":
-			return m, tea.Quit
 		}
 	}
 
