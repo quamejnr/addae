@@ -24,28 +24,24 @@ const (
 	projectView
 	updateView
 	createView
+	deleteView
 )
 
 type Model struct {
-	list            list.Model
-	service         Service
-	state           viewState
-	selectedProject *service.Project
-	projects        []service.Project
-	tasks           []service.Task
-	logs            []service.Log
-	form            *huh.Form
-	err             error
+	*CoreModel
+	list list.Model
+	form *huh.Form
 }
 
 var appStyle = lipgloss.NewStyle().Margin(1, 2)
 
 func NewModel(svc Service) (*Model, error) {
-	projects, err := svc.ListProjects()
+	coreModel, err := NewCoreModel(svc)
 	if err != nil {
 		return nil, err
 	}
 
+	projects := coreModel.GetProjects()
 	items := make([]list.Item, len(projects))
 	for i, p := range projects {
 		items[i] = p
@@ -57,181 +53,212 @@ func NewModel(svc Service) (*Model, error) {
 	projectList.SetShowHelp(true)
 
 	return &Model{
-		list:     projectList,
-		service:  svc,
-		state:    listView,
-		projects: projects,
+		CoreModel: coreModel,
+		list:      projectList,
 	}, nil
 }
 
 func (m Model) Init() tea.Cmd {
-  return tea.Batch(tea.EnterAltScreen)
+	return tea.Batch(tea.EnterAltScreen)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
-	switch m.state {
+	switch m.GetState() {
 	case listView:
-		// Handle list view updates
-		m.list, cmd = m.list.Update(msg)
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case "enter":
-				if i, ok := m.list.SelectedItem().(service.Project); ok {
-					m.state = projectView
-					m.selectedProject = &i
-					// Load tasks and logs for the selected project
-					tasks, err := m.service.ListProjectTasks(i.ID)
-					if err != nil {
-						m.err = err
-					} else {
-						m.tasks = tasks
-					}
-					logs, err := m.service.ListProjectLogs(i.ID)
-					if err != nil {
-						m.err = err
-					} else {
-						m.logs = logs
-					}
-				}
-			case "n":
-				m.state = createView
-				m.form = createProjectForm()
-				return m, m.form.Init()
-			case "d":
-				if confirmDelete() {
-					if i, ok := m.list.SelectedItem().(service.Project); ok {
-						if err := m.service.DeleteProject(i.ID); err != nil {
-							m.err = err
-						}
-					}
-				}
-			case "q", "ctrl+c":
-				return m, tea.Quit
-			}
-		}
-		// Refresh projects list after potential changes
-		projects, err := m.service.ListProjects()
-		if err != nil {
-			m.err = err
-		} else {
-			items := make([]list.Item, len(projects))
-			for i, p := range projects {
-				items[i] = p
-			}
-			m.list.SetItems(items)
-		}
-
+		return m.updateListView(msg)
 	case projectView:
-		// Handle project view updates
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case "u":
-				m.state = updateView
-				m.form = updateProjectForm(*m.selectedProject)
-				return m, m.form.Init()
-			case "esc", "b", "q", "ctrl+c":
-				m.state = listView
-				m.selectedProject = nil
-			}
-		}
-
+		return m.updateProjectView(msg)
 	case updateView:
-		// Handle update form updates
-		var formCmd tea.Cmd
-		var updatedForm tea.Model
-		updatedForm, formCmd = m.form.Update(msg)
-		m.form = updatedForm.(*huh.Form)
-		cmd = formCmd
-
-		if m.form.State == huh.StateAborted {
-			m.state = projectView
-			m.form = nil
-		} else if m.form.State == huh.StateCompleted {
-			p := m.selectedProject
-			p.Name = m.form.GetString("name")
-			p.Summary = m.form.GetString("summary")
-			p.Desc = m.form.GetString("desc")
-			p.Status = m.form.GetString("status")
-			if err := m.service.UpdateProject(p); err != nil {
-				m.err = err
-			}
-			m.state = projectView
-			m.form = nil
-		}
+		return m.updateFormView(msg, "update")
 	case createView:
-		// Handle create form updates
-		var formCmd tea.Cmd
-		var updatedForm tea.Model
-		updatedForm, formCmd = m.form.Update(msg)
-		m.form = updatedForm.(*huh.Form)
-		cmd = formCmd
+		return m.updateFormView(msg, "create")
+	case deleteView:
+		return m.updateFormView(msg, "delete")
+	}
 
-		if m.form.State == huh.StateAborted {
-			m.state = listView
-			m.form = nil
-		} else if m.form.State == huh.StateCompleted {
-			var p service.Project
-			p.Name = m.form.GetString("name")
-			p.Summary = m.form.GetString("summary")
-			p.Desc = m.form.GetString("desc")
-			p.Status = m.form.GetString("status")
-			if err := m.service.CreateProject(&p); err != nil {
-				m.err = err
+	return m, cmd
+}
+
+func (m Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.list, cmd = m.list.Update(msg)
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			if selected := m.list.Index(); selected >= 0 {
+				coreCmd := m.CoreModel.SelectProject(selected)
+				if coreCmd == CoreShowError {
+					return m, nil
+				}
 			}
-			m.state = listView
-			m.form = nil
+		case "n":
+			m.CoreModel.GoToCreateView()
+			m.form = createProjectForm()
+			return m, m.form.Init()
+		case "d":
+			if selected := m.list.Index(); selected >= 0 {
+				// Switch to delete view and show confirmation
+				m.CoreModel.GoToDeleteView()
+				m.form = confirmDeleteForm()
+				return m, m.form.Init()
+			}
+		case "q", "ctrl+c":
+			return m, tea.Quit
 		}
 	}
 
 	return m, cmd
 }
 
-func (m Model) View() string {
-	if m.err != nil {
-		return "Error: " + m.err.Error()
+func (m Model) updateProjectView(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "u":
+			m.CoreModel.GoToUpdateView()
+			if project := m.CoreModel.GetSelectedProject(); project != nil {
+				m.form = updateProjectForm(*project)
+				return m, m.form.Init()
+			}
+		case "esc", "b", "q", "ctrl+c":
+			m.CoreModel.GoToListView()
+		}
+	}
+	return m, nil
+}
+
+func (m Model) updateFormView(msg tea.Msg, formType string) (tea.Model, tea.Cmd) {
+	var formCmd tea.Cmd
+	var updatedForm tea.Model
+	updatedForm, formCmd = m.form.Update(msg)
+	m.form = updatedForm.(*huh.Form)
+
+	if m.form.State == huh.StateAborted {
+		m.handleFormAbort(formType)
+		m.form = nil
+		return m, nil
+	} else if m.form.State == huh.StateCompleted {
+		coreCmd := m.handleFormCompletion(formType)
+		m.form = nil
+
+		// Handle the core command and refresh if needed
+		switch coreCmd {
+		case CoreRefreshProjects:
+			if err := m.CoreModel.RefreshProjects(); err == nil {
+				m.refreshListItems()
+			}
+		case CoreQuit:
+			return m, tea.Quit
+		}
+		return m, nil
 	}
 
-	switch m.state {
-	case updateView:
-		return m.form.View()
+	return m, formCmd
+}
+
+func (m *Model) handleFormAbort(formType string) {
+	switch formType {
+	case "create":
+		m.CoreModel.GoToListView()
+	case "update":
+		m.CoreModel.GoToProjectView()
+	case "delete":
+		m.CoreModel.GoToListView()
+	}
+}
+
+func (m *Model) handleFormCompletion(formType string) CoreCommand {
+	switch formType {
+	case "create":
+		data := ProjectFormData{
+			Name:    m.form.GetString("name"),
+			Summary: m.form.GetString("summary"),
+			Desc:    m.form.GetString("desc"),
+			Status:  m.form.GetString("status"),
+		}
+		return m.CoreModel.CreateProject(data)
+	case "update":
+		data := ProjectFormData{
+			Name:    m.form.GetString("name"),
+			Summary: m.form.GetString("summary"),
+			Desc:    m.form.GetString("desc"),
+			Status:  m.form.GetString("status"),
+		}
+		return m.CoreModel.UpdateProject(data)
+	case "delete":
+		confirmed := m.form.GetBool("confirm")
+		if confirmed {
+			// Get the selected item from the list for deletion
+			if selected := m.list.Index(); selected >= 0 {
+				return m.CoreModel.DeleteProject(selected)
+			}
+		}
+		// If not confirmed or no selection, just go back to list
+		m.CoreModel.GoToListView()
+		return NoCoreCmd
+	}
+	return NoCoreCmd
+}
+
+func (m *Model) refreshListItems() {
+	projects := m.CoreModel.GetProjects()
+	items := make([]list.Item, len(projects))
+	for i, p := range projects {
+		items[i] = p
+	}
+	m.list.SetItems(items)
+}
+
+func (m Model) View() string {
+	if err := m.GetError(); err != nil {
+		return "Error: " + err.Error()
+	}
+
+	switch m.GetState() {
+	case updateView, createView, deleteView:
+		if m.form != nil {
+			return m.form.View()
+		}
+		return "Loading form..."
 	case projectView:
 		return m.projectView()
-	case createView:
-		return m.form.View()
 	default: // listView
 		return appStyle.Render(m.list.View())
 	}
 }
 
 func (m *Model) projectView() string {
-	if m.selectedProject == nil {
+	project := m.GetSelectedProject()
+	if project == nil {
 		return "No project selected."
 	}
 
 	var s string
-	s += lipgloss.NewStyle().Bold(true).Render(m.selectedProject.Name) + "\n"
-	s += "Status: " + m.selectedProject.Status + "\n"
-	s += "Description: " + m.selectedProject.Desc + "\n\n"
+	s += lipgloss.NewStyle().Bold(true).Render(project.Name) + "\n"
+	s += "Status: " + project.Status + "\n"
+	s += "Description: " + project.Desc + "\n\n"
 
 	s += lipgloss.NewStyle().Bold(true).Render("Tasks") + "\n"
-	if len(m.tasks) == 0 {
+	tasks := m.GetTasks()
+	if len(tasks) == 0 {
 		s += "No tasks for this project.\n"
 	} else {
-		for _, t := range m.tasks {
+		for _, t := range tasks {
 			s += "- " + t.Title + " (" + t.Status + ")\n"
 		}
 	}
 	s += "\n"
 
 	s += lipgloss.NewStyle().Bold(true).Render("Logs") + "\n"
-	if len(m.logs) == 0 {
+	logs := m.GetLogs()
+	if len(logs) == 0 {
 		s += "No logs for this project.\n"
 	} else {
-		for _, l := range m.logs {
+		for _, l := range logs {
 			s += "- " + l.Title + "\n"
 		}
 	}
@@ -239,17 +266,15 @@ func (m *Model) projectView() string {
 	return appStyle.Render(s)
 }
 
-func confirmDelete() bool {
-	var confirm bool
-	form := huh.NewForm(
+// Form helper functions
+func confirmDeleteForm() *huh.Form {
+	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Are you sure you want to delete this project?").
-				Value(&confirm),
+				Key("confirm"),
 		),
 	)
-	form.Run()
-	return confirm
 }
 
 func updateProjectForm(p service.Project) *huh.Form {
@@ -306,10 +331,6 @@ func createProjectForm() *huh.Form {
 					huh.NewOption("Done", "completed"),
 					huh.NewOption("Archived", "archived"),
 				),
-			huh.NewConfirm().
-				Affirmative("Save").
-				Negative("Cancel").
-				Key("saveConfirm"),
 		),
 	)
 }
