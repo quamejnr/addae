@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
@@ -29,11 +31,44 @@ const (
 
 type Model struct {
 	*CoreModel
-	list list.Model
-	form *huh.Form
+	list   list.Model
+	form   *huh.Form
+	width  int
+	height int
 }
 
-var appStyle = lipgloss.NewStyle().Margin(1, 2)
+var (
+	appStyle = lipgloss.NewStyle().Margin(1, 2)
+
+	// Column styles
+	leftColumnStyle = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, true, false, false).
+			BorderForeground(lipgloss.Color("240")).
+			PaddingRight(1)
+
+	rightColumnStyle = lipgloss.NewStyle().
+				PaddingLeft(1)
+
+	// Detail panel styles
+	detailTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("205")).
+				MarginBottom(1)
+
+	detailSectionStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("39")).
+				MarginTop(1).
+				MarginBottom(1)
+
+	detailItemStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("252"))
+
+	emptyDetailStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("240")).
+				Italic(true).
+				MarginTop(5)
+)
 
 func NewModel(svc Service) (*Model, error) {
 	coreModel, err := NewCoreModel(svc)
@@ -48,13 +83,15 @@ func NewModel(svc Service) (*Model, error) {
 	}
 
 	delegate := list.NewDefaultDelegate()
-	projectList := list.New(items, delegate, 80, 20)
+	projectList := list.New(items, delegate, 40, 20)
 	projectList.Title = "Addae"
 	projectList.SetShowHelp(true)
 
 	return &Model{
 		CoreModel: coreModel,
 		list:      projectList,
+		width:     80,
+		height:    24,
 	}, nil
 }
 
@@ -64,6 +101,17 @@ func (m Model) Init() tea.Cmd {
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+
+		// Update list dimensions for left column
+		listWidth := m.width/2 - 4
+		listHeight := m.height - 4
+		m.list.SetSize(listWidth, listHeight)
+	}
 
 	switch m.GetState() {
 	case listView:
@@ -83,9 +131,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+	oldIndex := m.list.Index()
 	m.list, cmd = m.list.Update(msg)
+	m.loadProjectDetails(oldIndex)
 
-    // don't allow these key presses during filtering
+	// If selection changed, load project details without changing state
+	if m.list.Index() != oldIndex && m.list.Index() >= 0 {
+		m.loadProjectDetails(m.list.Index())
+	}
+
+	// don't allow these key presses during filtering
 	if m.list.FilterState().String() != "filtering" {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -96,6 +151,7 @@ func (m *Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if coreCmd == CoreShowError {
 						return m, nil
 					}
+					m.CoreModel.GoToProjectView()
 				}
 			case "n":
 				m.CoreModel.GoToCreateView()
@@ -216,6 +272,28 @@ func (m *Model) refreshListItems() {
 	m.list.SetItems(items)
 }
 
+// loadProjectDetails loads project details without changing the view state
+func (m *Model) loadProjectDetails(index int) {
+	if index < 0 || index >= len(m.CoreModel.GetProjects()) {
+		return
+	}
+
+	projects := m.CoreModel.GetProjects()
+	project := projects[index]
+
+	// Set the selected project directly without changing state
+	m.CoreModel.selectedProject = &project
+
+	// Load tasks and logs
+	if tasks, err := m.CoreModel.service.ListProjectTasks(project.ID); err != nil {
+		m.CoreModel.tasks = tasks
+	}
+
+	if logs, err := m.CoreModel.service.ListProjectLogs(project.ID); err != nil {
+		m.CoreModel.logs = logs
+	}
+}
+
 func (m Model) View() string {
 	if err := m.GetError(); err != nil {
 		return "Error: " + err.Error()
@@ -228,48 +306,93 @@ func (m Model) View() string {
 		}
 		return "Loading form..."
 	case projectView:
-		return m.projectView()
+		// In project view, show list on left and project details on right
+		return m.renderDetailPanel()
 	default: // listView
-		return appStyle.Render(m.list.View())
+		return m.renderTabularView()
 	}
 }
 
-func (m *Model) projectView() string {
+func (m *Model) renderTabularView() string {
+	leftWidth := m.width/2 - 4
+	rightWidth := m.width/2 - 4
+
+	// Left column - project list
+	leftColumn := leftColumnStyle.
+		Width(leftWidth).
+		Height(m.height - 4).
+		Render(m.list.View())
+
+	// Right column - project details
+	rightColumn := rightColumnStyle.
+		Width(rightWidth).
+		Height(m.height - 4).
+		Render(m.renderDetailPanel())
+
+	// Join columns horizontally
+	return appStyle.Render(
+		lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, rightColumn),
+	)
+}
+
+func (m *Model) renderDetailPanel() string {
 	project := m.GetSelectedProject()
 	if project == nil {
-		return "No project selected."
+		return emptyDetailStyle.Render("← Select a project to view details")
 	}
 
-	var s string
-	s += lipgloss.NewStyle().Bold(true).Render(project.Name) + "\n"
-	s += "Status: " + project.Status + "\n"
-	s += "Description: " + project.Desc + "\n\n"
+	var s strings.Builder
 
-	s += lipgloss.NewStyle().Bold(true).Render("Tasks") + "\n"
+	// Project header
+	s.WriteString(detailTitleStyle.Render(project.Name))
+	s.WriteString("\n")
+	s.WriteString(detailItemStyle.Render("Status: " + project.Status))
+	s.WriteString("\n")
+	if project.Summary != "" {
+		s.WriteString(detailItemStyle.Render("Summary: " + project.Summary))
+		s.WriteString("\n")
+	}
+	if project.Desc != "" {
+		s.WriteString(detailItemStyle.Render("Description: " + project.Desc))
+		s.WriteString("\n")
+	}
+
+	// Tasks section
+	s.WriteString(detailSectionStyle.Render("Tasks"))
+	s.WriteString("\n")
 	tasks := m.GetTasks()
 	if len(tasks) == 0 {
-		s += "No tasks for this project.\n"
+		s.WriteString(detailItemStyle.Render("No tasks for this project."))
+		s.WriteString("\n")
 	} else {
 		for _, t := range tasks {
-			s += "- " + t.Title + " (" + t.Status + ")\n"
+			s.WriteString(detailItemStyle.Render("• " + t.Title + " (" + t.Status + ")"))
+			s.WriteString("\n")
 		}
 	}
-	s += "\n"
 
-	s += lipgloss.NewStyle().Bold(true).Render("Logs") + "\n"
+	// Logs section
+	s.WriteString(detailSectionStyle.Render("Logs"))
+	s.WriteString("\n")
 	logs := m.GetLogs()
 	if len(logs) == 0 {
-		s += "No logs for this project.\n"
+		s.WriteString(detailItemStyle.Render("No logs for this project."))
+		s.WriteString("\n")
 	} else {
 		for _, l := range logs {
-			s += "- " + l.Title + "\n"
+			s.WriteString(detailItemStyle.Render("• " + l.Title))
+			s.WriteString("\n")
 		}
 	}
 
-	return appStyle.Render(s)
+	// Help text at bottom
+	s.WriteString("\n")
+	s.WriteString(emptyDetailStyle.Render("Press 'enter' to focus • 'u' to update • 'n' to create • 'd' to delete"))
+
+	return s.String()
 }
 
-// Form helper functions
+// Form helper functions (unchanged)
 func confirmDeleteForm() *huh.Form {
 	return huh.NewForm(
 		huh.NewGroup(

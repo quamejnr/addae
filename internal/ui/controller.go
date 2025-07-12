@@ -145,7 +145,6 @@ func (m *CoreModel) GoToDeleteView() CoreCommand {
 // GoToListView switches to list view
 func (m *CoreModel) GoToListView() CoreCommand {
 	m.state = listView
-	m.selectedProject = nil
 	return NoCoreCmd
 }
 

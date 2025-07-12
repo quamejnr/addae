@@ -27,7 +27,7 @@ type Project struct {
 }
 
 func (p Project) Title() string       { return p.Name }
-func (p Project) Description() string { return p.Summary }
+func (p Project) Description() string { return p.Status }
 func (p Project) FilterValue() string { return p.Name }
 
 type Task struct {
