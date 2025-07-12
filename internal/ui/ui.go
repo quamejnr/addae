@@ -62,7 +62,7 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(tea.EnterAltScreen)
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch m.GetState() {
@@ -81,7 +81,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
 
@@ -117,7 +117,7 @@ func (m Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) updateProjectView(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) updateProjectView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -134,7 +134,7 @@ func (m Model) updateProjectView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateFormView(msg tea.Msg, formType string) (tea.Model, tea.Cmd) {
+func (m *Model) updateFormView(msg tea.Msg, formType string) (tea.Model, tea.Cmd) {
 	var formCmd tea.Cmd
 	var updatedForm tea.Model
 	updatedForm, formCmd = m.form.Update(msg)
