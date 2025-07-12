@@ -48,20 +48,18 @@ func InitDB(dbPath string) (*sql.DB, error) {
 func RunMigrations(db *sql.DB, migrationsDir string) error {
 	// goose.SetBaseFS(embedMigrations)
 
-
 	if err := goose.SetDialect("sqlite3"); err != nil {
-    return fmt.Errorf("migration failed: %w", err)
+		return fmt.Errorf("migration failed: %w", err)
 	}
 
-  // temporarily disabling logs in the goose.Up function after migration
-  log.SetOutput(io.Discard)
+	// temporarily disabling logs in the goose.Up function after migration
+	log.SetOutput(io.Discard)
 
 	if err := goose.Up(db, migrationsDir); err != nil {
-    return fmt.Errorf("migration failed: %w", err)
+		return fmt.Errorf("migration failed: %w", err)
 	}
 
-  // restore logs to stdout
-  log.SetOutput(os.Stdout)
-  return nil
+	// restore logs to stdout
+	log.SetOutput(os.Stdout)
+	return nil
 }
-

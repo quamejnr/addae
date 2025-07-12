@@ -261,4 +261,3 @@ func (s *Service) ListProjectLogs(projectID int) ([]Log, error) {
 	}
 	return logs, nil
 }
-
