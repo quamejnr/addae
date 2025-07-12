@@ -212,7 +212,7 @@ func (m *CoreModel) DeleteProject(index int) CoreCommand {
 		m.err = err
 		return CoreShowError
 	}
-
+	m.state = listView
 	return CoreRefreshProjects
 }
 
