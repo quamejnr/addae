@@ -131,12 +131,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	oldIndex := m.list.Index()
 	m.list, cmd = m.list.Update(msg)
-	m.loadProjectDetails(oldIndex)
 
 	// If selection changed, load project details without changing state
-	if m.list.Index() != oldIndex && m.list.Index() >= 0 {
+	if m.list.Index() >= 0 {
 		m.loadProjectDetails(m.list.Index())
 	}
 
@@ -270,6 +268,21 @@ func (m *Model) refreshListItems() {
 		items[i] = p
 	}
 	m.list.SetItems(items)
+
+	if len(projects) == 0 {
+		m.CoreModel.selectedProject = nil
+		m.CoreModel.tasks = nil
+		m.CoreModel.logs = nil
+		return
+	}
+	idx := m.list.Index()
+	if idx >= len(projects) {
+		idx = len(projects) - 1
+		m.list.Select(idx)
+	}
+
+	m.loadProjectDetails(idx)
+
 }
 
 // loadProjectDetails loads project details without changing the view state
@@ -285,11 +298,11 @@ func (m *Model) loadProjectDetails(index int) {
 	m.CoreModel.selectedProject = &project
 
 	// Load tasks and logs
-	if tasks, err := m.CoreModel.service.ListProjectTasks(project.ID); err != nil {
+	if tasks, err := m.CoreModel.service.ListProjectTasks(project.ID); err == nil {
 		m.CoreModel.tasks = tasks
 	}
 
-	if logs, err := m.CoreModel.service.ListProjectLogs(project.ID); err != nil {
+	if logs, err := m.CoreModel.service.ListProjectLogs(project.ID); err == nil {
 		m.CoreModel.logs = logs
 	}
 }
