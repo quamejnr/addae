@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
@@ -34,12 +36,86 @@ const (
 	createLogView
 )
 
+type detailTab int
+
+const (
+	projectDetailTab detailTab = iota
+	tasksTab
+	logsTab
+)
+
 type Model struct {
 	*CoreModel
-	list   list.Model
-	form   *huh.Form
-	width  int
-	height int
+	list      list.Model
+	form      *huh.Form
+	width     int
+	height    int
+	activeTab detailTab
+	help      help.Model
+	keys      ProjectKeyMap
+}
+
+type ProjectKeyMap struct {
+	UpdateProject key.Binding
+	CreateTask    key.Binding
+	CreateLog     key.Binding
+	GotoDetails   key.Binding
+	GotoTasks     key.Binding
+	GotoLogs      key.Binding
+	TabLeft       key.Binding
+	TabRight      key.Binding
+	Back          key.Binding
+}
+
+func (k ProjectKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.UpdateProject, k.CreateTask, k.CreateLog, k.Back}
+}
+
+func (k ProjectKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.UpdateProject, k.CreateTask, k.CreateLog},
+		{k.GotoDetails, k.GotoTasks, k.GotoLogs, k.TabLeft, k.TabRight},
+		{k.Back},
+	}
+}
+
+var projectKeys = ProjectKeyMap{
+	UpdateProject: key.NewBinding(
+		key.WithKeys("u"),
+		key.WithHelp("u", "update project"),
+	),
+	CreateTask: key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "create task"),
+	),
+	CreateLog: key.NewBinding(
+		key.WithKeys("l"),
+		key.WithHelp("l", "create log"),
+	),
+	GotoDetails: key.NewBinding(
+		key.WithKeys("1"),
+		key.WithHelp("1", "show details"),
+	),
+	GotoTasks: key.NewBinding(
+		key.WithKeys("2"),
+		key.WithHelp("2", "show tasks"),
+	),
+	GotoLogs: key.NewBinding(
+		key.WithKeys("3"),
+		key.WithHelp("3", "show logs"),
+	),
+	TabLeft: key.NewBinding(
+		key.WithKeys("left", "ctrl+h"),
+		key.WithHelp("←/ctrl+h", "previous tab"),
+	),
+	TabRight: key.NewBinding(
+		key.WithKeys("right", "ctrl+l"),
+		key.WithHelp("→/ctrl+l", "next tab"),
+	),
+	Back: key.NewBinding(
+		key.WithKeys("esc", "b", "q", "ctrl+c"),
+		key.WithHelp("esc/b/q/ctrl+c", "back to list"),
+	),
 }
 
 var (
@@ -97,6 +173,9 @@ func NewModel(svc Service) (*Model, error) {
 		list:      projectList,
 		width:     80,
 		height:    24,
+		activeTab: projectDetailTab,
+		help:      help.New(),
+		keys:      projectKeys,
 	}, nil
 }
 
@@ -183,22 +262,32 @@ func (m *Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateProjectView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "u":
+		switch {
+		case key.Matches(msg, m.keys.UpdateProject):
 			m.CoreModel.GoToUpdateView()
 			if project := m.CoreModel.GetSelectedProject(); project != nil {
 				m.form = updateProjectForm(*project)
 				return m, m.form.Init()
 			}
-		case "t":
+		case key.Matches(msg, m.keys.CreateTask):
 			m.CoreModel.GoToCreateTaskView()
 			m.form = createTaskForm()
 			return m, m.form.Init()
-		case "l":
+		case key.Matches(msg, m.keys.CreateLog):
 			m.CoreModel.GoToCreateLogView()
 			m.form = createLogForm()
 			return m, m.form.Init()
-		case "esc", "b", "q", "ctrl+c":
+		case key.Matches(msg, m.keys.GotoDetails):
+			m.activeTab = projectDetailTab
+		case key.Matches(msg, m.keys.GotoTasks):
+			m.activeTab = tasksTab
+		case key.Matches(msg, m.keys.GotoLogs):
+			m.activeTab = logsTab
+		case key.Matches(msg, m.keys.TabRight):
+			m.activeTab = (m.activeTab + 1) % 3
+		case key.Matches(msg, m.keys.TabLeft):
+			m.activeTab = (m.activeTab - 1 + 3) % 3
+		case key.Matches(msg, m.keys.Back):
 			m.CoreModel.GoToListView()
 		}
 	}
@@ -390,7 +479,58 @@ func (m *Model) renderDetailPanel() string {
 
 	var s strings.Builder
 
-	// Project header
+	// Render tabs
+	s.WriteString(m.renderTabs())
+	s.WriteString("\n")
+
+	// Render content based on active tab
+	switch m.activeTab {
+	case projectDetailTab:
+		s.WriteString(m.renderProjectDetails())
+	case tasksTab:
+		s.WriteString(m.renderTasksList())
+	case logsTab:
+		s.WriteString(m.renderLogsList())
+	}
+
+	// Help text at bottom
+	s.WriteString("\n")
+	s.WriteString(strings.Repeat("\n", 50))
+	s.WriteString(m.help.View(m.keys))
+	return s.String()
+}
+
+func (m *Model) renderTabs() string {
+	tabStyle := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), true).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(0, 1)
+
+	activeTabStyle := tabStyle.
+		BorderForeground(lipgloss.Color("69")).
+		Foreground(lipgloss.Color("69"))
+
+	var tabs []string
+
+	tabs = append(tabs, m.tabTitle("Details", projectDetailTab, tabStyle, activeTabStyle))
+	tabs = append(tabs, m.tabTitle("Tasks", tasksTab, tabStyle, activeTabStyle))
+	tabs = append(tabs, m.tabTitle("Logs", logsTab, tabStyle, activeTabStyle))
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
+}
+
+func (m *Model) tabTitle(title string, tab detailTab, style, activeStyle lipgloss.Style) string {
+	if m.activeTab == tab {
+		return activeStyle.Render(title)
+	}
+	return style.Render(title)
+}
+
+func (m *Model) renderProjectDetails() string {
+	project := m.GetSelectedProject()
+	var s strings.Builder
+
+	s.WriteString("\n")
 	s.WriteString(detailTitleStyle.Render(project.Name))
 	s.WriteString("\n")
 	s.WriteString(detailItemStyle.Render("Status: " + project.Status))
@@ -403,9 +543,12 @@ func (m *Model) renderDetailPanel() string {
 		s.WriteString(detailItemStyle.Render("Description: " + project.Desc))
 		s.WriteString("\n")
 	}
+	return s.String()
+}
 
-	// Tasks section
+func (m *Model) renderTasksList() string {
 	tasks := m.GetTasks()
+	var s strings.Builder
 	s.WriteString(detailSectionStyle.Render(fmt.Sprintf("Tasks (%d)", len(tasks))))
 	s.WriteString("\n")
 	if len(tasks) == 0 {
@@ -417,9 +560,12 @@ func (m *Model) renderDetailPanel() string {
 			s.WriteString("\n")
 		}
 	}
+	return s.String()
+}
 
-	// Logs section
+func (m *Model) renderLogsList() string {
 	logs := m.GetLogs()
+	var s strings.Builder
 	s.WriteString(detailSectionStyle.Render(fmt.Sprintf("Logs (%d)", len(logs))))
 	s.WriteString("\n")
 	if len(logs) == 0 {
@@ -431,11 +577,6 @@ func (m *Model) renderDetailPanel() string {
 			s.WriteString("\n")
 		}
 	}
-
-	// Help text at bottom
-	s.WriteString("\n")
-	s.WriteString(emptyDetailStyle.Render("Press 'enter' to focus • 'u' to update • 'n' to create • 'd' to delete • 't' to create task • 'l' to create log"))
-
 	return s.String()
 }
 
