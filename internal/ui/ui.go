@@ -65,17 +65,18 @@ type ProjectKeyMap struct {
 	TabLeft       key.Binding
 	TabRight      key.Binding
 	Back          key.Binding
+	Help          key.Binding
 }
 
 func (k ProjectKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.UpdateProject, k.CreateTask, k.CreateLog, k.Back}
+	return []key.Binding{k.UpdateProject, k.CreateTask, k.CreateLog, k.Back, k.Help}
 }
 
 func (k ProjectKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.UpdateProject, k.CreateTask, k.CreateLog},
 		{k.GotoDetails, k.GotoTasks, k.GotoLogs, k.TabLeft, k.TabRight},
-		{k.Back},
+		{k.Back, k.Help},
 	}
 }
 
@@ -113,8 +114,12 @@ var projectKeys = ProjectKeyMap{
 		key.WithHelp("→/ctrl+l", "next tab"),
 	),
 	Back: key.NewBinding(
-		key.WithKeys("esc", "b", "q", "ctrl+c"),
-		key.WithHelp("esc/b/q/ctrl+c", "back to list"),
+		key.WithKeys("esc", "b", "ctrl+c"),
+		key.WithHelp("esc/b/ctrl+c", "back to list"),
+	),
+	Help: key.NewBinding(
+		key.WithKeys("?"),
+		key.WithHelp("?", "toggle help"),
 	),
 }
 
@@ -289,6 +294,8 @@ func (m *Model) updateProjectView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeTab = (m.activeTab - 1 + 3) % 3
 		case key.Matches(msg, m.keys.Back):
 			m.CoreModel.GoToListView()
+		case key.Matches(msg, m.keys.Help):
+			m.help.ShowAll = !m.help.ShowAll
 		}
 	}
 	return m, nil
