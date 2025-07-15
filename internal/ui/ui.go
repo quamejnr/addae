@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -137,8 +136,7 @@ var (
 
 	// Detail panel styles
 	detailTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("205")).
+				Foreground(lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#EE6FF8"}).
 				MarginBottom(1)
 
 	detailSectionStyle = lipgloss.NewStyle().
@@ -556,7 +554,6 @@ func (m *Model) renderProjectDetails() string {
 func (m *Model) renderTasksList() string {
 	tasks := m.GetTasks()
 	var s strings.Builder
-	s.WriteString(detailSectionStyle.Render(fmt.Sprintf("Tasks (%d)", len(tasks))))
 	s.WriteString("\n")
 	if len(tasks) == 0 {
 		s.WriteString(detailItemStyle.Render("No tasks for this project."))
@@ -573,7 +570,6 @@ func (m *Model) renderTasksList() string {
 func (m *Model) renderLogsList() string {
 	logs := m.GetLogs()
 	var s strings.Builder
-	s.WriteString(detailSectionStyle.Render(fmt.Sprintf("Logs (%d)", len(logs))))
 	s.WriteString("\n")
 	if len(logs) == 0 {
 		s.WriteString(detailItemStyle.Render("No logs for this project."))
