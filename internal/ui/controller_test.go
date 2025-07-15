@@ -1,4 +1,3 @@
-
 package ui
 
 import (
@@ -70,6 +69,34 @@ func (m *MockService) ListProjectLogs(projectID int) ([]service.Log, error) {
 		return nil, m.err
 	}
 	return m.logs, nil
+}
+
+func (m *MockService) CreateTask(projectID int, title, desc string) error {
+	if m.err != nil {
+		return m.err
+	}
+	task := service.Task{
+		ID:        len(m.tasks) + 1,
+		ProjectID: projectID,
+		Title:     title,
+		Desc:      desc,
+	}
+	m.tasks = append(m.tasks, task)
+	return nil
+}
+
+func (m *MockService) CreateLog(projectID int, title, desc string) error {
+	if m.err != nil {
+		return m.err
+	}
+	log := service.Log{
+		ID:        len(m.logs) + 1,
+		ProjectID: projectID,
+		Title:     title,
+		Desc:      desc,
+	}
+	m.logs = append(m.logs, log)
+	return nil
 }
 
 func TestNewCoreModel(t *testing.T) {
@@ -179,5 +206,59 @@ func TestDeleteProject(t *testing.T) {
 	}
 	if len(mockService.projects) != 0 {
 		t.Errorf("expected 0 projects in mock service, got %d", len(mockService.projects))
+	}
+}
+
+func TestCreateTask(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+
+	formData := TaskFormData{
+		Title: "New Task",
+		Desc:  "Description",
+	}
+	cmd := coreModel.CreateTask(formData)
+
+	if cmd != CoreRefreshProjectView {
+		t.Errorf("expected CoreRefreshProjectView, got %v", cmd)
+	}
+	if coreModel.GetState() != projectView {
+		t.Errorf("expected state to be projectView, got %v", coreModel.GetState())
+	}
+	if len(mockService.tasks) != 1 {
+		t.Errorf("expected 1 task in mock service, got %d", len(mockService.tasks))
+	}
+	if mockService.tasks[0].Title != "New Task" {
+		t.Errorf("expected task title to be 'New Task', got %s", mockService.tasks[0].Title)
+	}
+}
+
+func TestCreateLog(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+
+	formData := LogFormData{
+		Title: "New Log",
+		Desc:  "Description",
+	}
+	cmd := coreModel.CreateLog(formData)
+
+	if cmd != CoreRefreshProjectView {
+		t.Errorf("expected CoreRefreshProjectView, got %v", cmd)
+	}
+	if coreModel.GetState() != projectView {
+		t.Errorf("expected state to be projectView, got %v", coreModel.GetState())
+	}
+	if len(mockService.logs) != 1 {
+		t.Errorf("expected 1 log in mock service, got %d", len(mockService.logs))
+	}
+	if mockService.logs[0].Title != "New Log" {
+		t.Errorf("expected log title to be 'New Log', got %s", mockService.logs[0].Title)
 	}
 }

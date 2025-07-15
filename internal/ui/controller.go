@@ -12,6 +12,7 @@ type CoreCommand int
 const (
 	NoCoreCmd CoreCommand = iota
 	CoreRefreshProjects
+	CoreRefreshProjectView
 	CoreQuit
 	CoreShowError
 )
@@ -33,6 +34,18 @@ type ProjectFormData struct {
 	Summary string
 	Desc    string
 	Status  string
+}
+
+// TaskFormData represents the data structure for task forms
+type TaskFormData struct {
+	Title string
+	Desc  string
+}
+
+// LogFormData represents the data structure for log forms
+type LogFormData struct {
+	Title string
+	Desc  string
 }
 
 // NewCoreModel creates a new business logic model
@@ -158,6 +171,18 @@ func (m *CoreModel) GoToProjectView() CoreCommand {
 	return NoCoreCmd
 }
 
+// GoToCreateTaskView switches to create task view
+func (m *CoreModel) GoToCreateTaskView() CoreCommand {
+	m.state = createTaskView
+	return NoCoreCmd
+}
+
+// GoToCreateLogView switches to create log view
+func (m *CoreModel) GoToCreateLogView() CoreCommand {
+	m.state = createLogView
+	return NoCoreCmd
+}
+
 // CreateProject creates a new project
 func (m *CoreModel) CreateProject(data ProjectFormData) CoreCommand {
 	p := service.Project{
@@ -197,6 +222,38 @@ func (m *CoreModel) UpdateProject(data ProjectFormData) CoreCommand {
 	m.selectedProject = &p
 	m.state = projectView
 	return CoreRefreshProjects
+}
+
+// CreateTask creates a new task for the selected project
+func (m *CoreModel) CreateTask(data TaskFormData) CoreCommand {
+	if m.selectedProject == nil {
+		m.err = errors.New("no project selected")
+		return CoreShowError
+	}
+
+	if err := m.service.CreateTask(m.selectedProject.ID, data.Title, data.Desc); err != nil {
+		m.err = err
+		return CoreShowError
+	}
+
+	m.state = projectView
+	return CoreRefreshProjectView
+}
+
+// CreateLog creates a new log for the selected project
+func (m *CoreModel) CreateLog(data LogFormData) CoreCommand {
+	if m.selectedProject == nil {
+		m.err = errors.New("no project selected")
+		return CoreShowError
+	}
+
+	if err := m.service.CreateLog(m.selectedProject.ID, data.Title, data.Desc); err != nil {
+		m.err = err
+		return CoreShowError
+	}
+
+	m.state = projectView
+	return CoreRefreshProjectView
 }
 
 // DeleteProject deletes a project by index

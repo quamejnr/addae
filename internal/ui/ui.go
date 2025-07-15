@@ -17,6 +17,8 @@ type Service interface {
 	UpdateProject(*service.Project) error
 	ListProjectTasks(projectID int) ([]service.Task, error)
 	ListProjectLogs(projectID int) ([]service.Log, error)
+	CreateTask(projectID int, title, desc string) error
+	CreateLog(projectID int, title, desc string) error
 }
 
 type viewState int
@@ -27,6 +29,8 @@ const (
 	updateView
 	createView
 	deleteView
+	createTaskView
+	createLogView
 )
 
 type Model struct {
@@ -124,6 +128,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateFormView(msg, "create")
 	case deleteView:
 		return m.updateFormView(msg, "delete")
+	case createTaskView:
+		return m.updateFormView(msg, "createTask")
+	case createLogView:
+		return m.updateFormView(msg, "createLog")
 	}
 
 	return m, cmd
@@ -181,6 +189,14 @@ func (m *Model) updateProjectView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.form = updateProjectForm(*project)
 				return m, m.form.Init()
 			}
+		case "t":
+			m.CoreModel.GoToCreateTaskView()
+			m.form = createTaskForm()
+			return m, m.form.Init()
+		case "l":
+			m.CoreModel.GoToCreateLogView()
+			m.form = createLogForm()
+			return m, m.form.Init()
 		case "esc", "b", "q", "ctrl+c":
 			m.CoreModel.GoToListView()
 		}
@@ -208,6 +224,8 @@ func (m *Model) updateFormView(msg tea.Msg, formType string) (tea.Model, tea.Cmd
 			if err := m.CoreModel.RefreshProjects(); err == nil {
 				m.refreshListItems()
 			}
+		case CoreRefreshProjectView:
+			m.loadProjectDetails(m.list.Index())
 		case CoreQuit:
 			return m, tea.Quit
 		}
@@ -225,6 +243,8 @@ func (m *Model) handleFormAbort(formType string) {
 		m.CoreModel.GoToProjectView()
 	case "delete":
 		m.CoreModel.GoToListView()
+	case "createTask", "createLog":
+		m.CoreModel.GoToProjectView()
 	}
 }
 
@@ -257,6 +277,18 @@ func (m *Model) handleFormCompletion(formType string) CoreCommand {
 		// If not confirmed or no selection, just go back to list
 		m.CoreModel.GoToListView()
 		return NoCoreCmd
+	case "createTask":
+		data := TaskFormData{
+			Title: m.form.GetString("title"),
+			Desc:  m.form.GetString("desc"),
+		}
+		return m.CoreModel.CreateTask(data)
+	case "createLog":
+		data := LogFormData{
+			Title: m.form.GetString("title"),
+			Desc:  m.form.GetString("desc"),
+		}
+		return m.CoreModel.CreateLog(data)
 	}
 	return NoCoreCmd
 }
@@ -313,7 +345,7 @@ func (m Model) View() string {
 	}
 
 	switch m.GetState() {
-	case updateView, createView, deleteView:
+	case updateView, createView, deleteView, createTaskView, createLogView:
 		if m.form != nil {
 			return m.form.View()
 		}
@@ -399,8 +431,8 @@ func (m *Model) renderDetailPanel() string {
 	}
 
 	// Help text at bottom
-	s.WriteString("\n")
-	s.WriteString(emptyDetailStyle.Render("Press 'enter' to focus • 'u' to update • 'n' to create • 'd' to delete"))
+    s.WriteString("\n")
+    s.WriteString(emptyDetailStyle.Render("Press 'enter' to focus • 'u' to update • 'n' to create • 'd' to delete • 't' to create task • 'l' to create log"))
 
 	return s.String()
 }
@@ -470,6 +502,36 @@ func createProjectForm() *huh.Form {
 					huh.NewOption("Done", "completed"),
 					huh.NewOption("Archived", "archived"),
 				),
+		),
+	)
+}
+
+func createTaskForm() *huh.Form {
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Title").
+				Key("title").
+				Placeholder("Enter title of task"),
+			huh.NewText().
+				Title("Description (Optional)").
+				Key("desc").
+				Placeholder("Enter detailed description of task"),
+		),
+	)
+}
+
+func createLogForm() *huh.Form {
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Title").
+				Key("title").
+				Placeholder("Enter title of log"),
+			huh.NewText().
+				Title("Description (Optional)").
+				Key("desc").
+				Placeholder("Enter detailed description of log"),
 		),
 	)
 }
