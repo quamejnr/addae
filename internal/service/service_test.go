@@ -231,7 +231,7 @@ func TestCreateTask(t *testing.T) {
 	}
 
 	// Create a task
-	err = service.CreateTask(projectID, "Test Task", "Test Description")
+	err = service.CreateTask(projectID, "Test Task", "Test Description", "todo")
 	if err != nil {
 		t.Fatalf("CreateTask failed: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestUpdateTask(t *testing.T) {
 	}
 
 	// Create a task to update
-	err = service.CreateTask(projectID, "Test Task", "Test Description")
+	err = service.CreateTask(projectID, "Test Task", "Test Description", "todo")
 	if err != nil {
 		t.Fatalf("CreateTask failed: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestDeleteTask(t *testing.T) {
 	}
 
 	// Create a task to delete
-	err = service.CreateTask(projectID, "Test Task", "Test Description")
+	err = service.CreateTask(projectID, "Test Task", "Test Description", "todo")
 	if err != nil {
 		t.Fatalf("CreateTask failed: %v", err)
 	}
@@ -593,11 +593,11 @@ func TestListProjectTasks(t *testing.T) {
 	}
 
 	// Create a few tasks for the project
-	err = service.CreateTask(projectID, "Test Task 1", "Description 1")
+	err = service.CreateTask(projectID, "Test Task 1", "Description 1", "todo")
 	if err != nil {
 		t.Fatalf("CreateTask failed: %v", err)
 	}
-	err = service.CreateTask(projectID, "Test Task 2", "Description 2")
+	err = service.CreateTask(projectID, "Test Task 2", "Description 2", "todo")
 	if err != nil {
 		t.Fatalf("CreateTask failed: %v", err)
 	}

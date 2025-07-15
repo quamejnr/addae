@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -17,7 +18,7 @@ type Service interface {
 	UpdateProject(*service.Project) error
 	ListProjectTasks(projectID int) ([]service.Task, error)
 	ListProjectLogs(projectID int) ([]service.Log, error)
-	CreateTask(projectID int, title, desc string) error
+	CreateTask(projectID int, title, desc, status string) error
 	CreateLog(projectID int, title, desc string) error
 }
 
@@ -279,8 +280,9 @@ func (m *Model) handleFormCompletion(formType string) CoreCommand {
 		return NoCoreCmd
 	case "createTask":
 		data := TaskFormData{
-			Title: m.form.GetString("title"),
-			Desc:  m.form.GetString("desc"),
+			Title:  m.form.GetString("title"),
+			Desc:   m.form.GetString("desc"),
+			Status: m.form.GetString("status"),
 		}
 		return m.CoreModel.CreateTask(data)
 	case "createLog":
@@ -403,9 +405,9 @@ func (m *Model) renderDetailPanel() string {
 	}
 
 	// Tasks section
-	s.WriteString(detailSectionStyle.Render("Tasks"))
-	s.WriteString("\n")
 	tasks := m.GetTasks()
+	s.WriteString(detailSectionStyle.Render(fmt.Sprintf("Tasks (%d)", len(tasks))))
+	s.WriteString("\n")
 	if len(tasks) == 0 {
 		s.WriteString(detailItemStyle.Render("No tasks for this project."))
 		s.WriteString("\n")
@@ -417,9 +419,9 @@ func (m *Model) renderDetailPanel() string {
 	}
 
 	// Logs section
-	s.WriteString(detailSectionStyle.Render("Logs"))
-	s.WriteString("\n")
 	logs := m.GetLogs()
+	s.WriteString(detailSectionStyle.Render(fmt.Sprintf("Logs (%d)", len(logs))))
+	s.WriteString("\n")
 	if len(logs) == 0 {
 		s.WriteString(detailItemStyle.Render("No logs for this project."))
 		s.WriteString("\n")
@@ -431,8 +433,8 @@ func (m *Model) renderDetailPanel() string {
 	}
 
 	// Help text at bottom
-    s.WriteString("\n")
-    s.WriteString(emptyDetailStyle.Render("Press 'enter' to focus • 'u' to update • 'n' to create • 'd' to delete • 't' to create task • 'l' to create log"))
+	s.WriteString("\n")
+	s.WriteString(emptyDetailStyle.Render("Press 'enter' to focus • 'u' to update • 'n' to create • 'd' to delete • 't' to create task • 'l' to create log"))
 
 	return s.String()
 }
@@ -517,6 +519,15 @@ func createTaskForm() *huh.Form {
 				Title("Description (Optional)").
 				Key("desc").
 				Placeholder("Enter detailed description of task"),
+			huh.NewSelect[string]().
+				Title("Status").
+				Key("status").
+				Options(
+					huh.NewOption("Todo", "todo"),
+					huh.NewOption("In Progress", "in progress"),
+					huh.NewOption("Completed", "completed"),
+					huh.NewOption("Archived", "archived"),
+				),
 		),
 	)
 }

@@ -106,11 +106,11 @@ func (s *Service) DeleteProject(id int) error {
 }
 
 // Task CRUD operations
-func (s *Service) CreateTask(projectID int, title, desc string) error {
+func (s *Service) CreateTask(projectID int, title, desc, status string) error {
 	_, err := s.db.Exec(`
-		INSERT INTO tasks (project_id, title, desc, date_created, date_updated)
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-	`, projectID, title, desc)
+		INSERT INTO tasks (project_id, title, desc, status, date_created, date_updated)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`, projectID, title, desc, status)
 	return err
 }
 
