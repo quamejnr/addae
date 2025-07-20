@@ -53,6 +53,19 @@ func TestUpdateProjectView(t *testing.T) {
 	if model.form == nil {
 		t.Error("expected form to be initialized, but it was nil")
 	}
+
+	// Test navigating to the create task view
+	model.CoreModel.GoToProjectView() // Go back to project view first
+	msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")}
+	newModel, _ = model.Update(msg)
+	model = newModel.(*Model)
+
+	if model.GetState() != createTaskView {
+		t.Errorf("expected state to be createTaskView, got %v", model.GetState())
+	}
+	if model.form == nil {
+		t.Error("expected form to be initialized, but it was nil")
+	}
 }
 
 func TestHandleFormAbort(t *testing.T) {
@@ -75,5 +88,29 @@ func TestHandleFormAbort(t *testing.T) {
 	model.handleFormAbort("update")
 	if model.GetState() != projectView {
 		t.Errorf("expected state to be projectView after aborting update, got %v", model.GetState())
+	}
+
+	// Test aborting from createTask view
+	mockServiceCreateTask := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+	}
+	model, _ = NewModel(mockServiceCreateTask)
+	model.CoreModel.SelectProject(0)
+	model.CoreModel.GoToCreateTaskView()
+	model.handleFormAbort("createTask")
+	if model.GetState() != projectView {
+		t.Errorf("expected state to be projectView after aborting createTask, got %v", model.GetState())
+	}
+
+	// Test aborting from createLog view
+	mockServiceCreateLog := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+	}
+	model, _ = NewModel(mockServiceCreateLog)
+	model.CoreModel.SelectProject(0)
+	model.CoreModel.GoToCreateLogView()
+	model.handleFormAbort("createLog")
+	if model.GetState() != projectView {
+		t.Errorf("expected state to be projectView after aborting createLog, got %v", model.GetState())
 	}
 }

@@ -71,7 +71,7 @@ func (m *MockService) ListProjectLogs(projectID int) ([]service.Log, error) {
 	return m.logs, nil
 }
 
-func (m *MockService) CreateTask(projectID int, title, desc, status string) error {
+func (m *MockService) CreateTask(projectID int, title, desc string) error {
 	if m.err != nil {
 		return m.err
 	}
@@ -80,7 +80,6 @@ func (m *MockService) CreateTask(projectID int, title, desc, status string) erro
 		ProjectID: projectID,
 		Title:     title,
 		Desc:      desc,
-		Status:    status,
 	}
 	m.tasks = append(m.tasks, task)
 	return nil
@@ -220,7 +219,6 @@ func TestCreateTask(t *testing.T) {
 	formData := TaskFormData{
 		Title: "New Task",
 		Desc:  "Description",
-		Status: "todo",
 	}
 	cmd := coreModel.CreateTask(formData)
 
@@ -235,9 +233,6 @@ func TestCreateTask(t *testing.T) {
 	}
 	if mockService.tasks[0].Title != "New Task" {
 		t.Errorf("expected task title to be 'New Task', got %s", mockService.tasks[0].Title)
-	}
-	if mockService.tasks[0].Status != "todo" {
-		t.Errorf("expected task status to be 'todo', got %s", mockService.tasks[0].Status)
 	}
 }
 

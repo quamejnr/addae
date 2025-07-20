@@ -19,7 +19,7 @@ type Service interface {
 	UpdateProject(*service.Project) error
 	ListProjectTasks(projectID int) ([]service.Task, error)
 	ListProjectLogs(projectID int) ([]service.Log, error)
-	CreateTask(projectID int, title, desc, status string) error
+	CreateTask(projectID int, title, desc string) error
 	CreateLog(projectID int, title, desc string) error
 }
 
@@ -376,7 +376,6 @@ func (m *Model) handleFormCompletion(formType string) CoreCommand {
 		data := TaskFormData{
 			Title:  m.form.GetString("title"),
 			Desc:   m.form.GetString("desc"),
-			Status: m.form.GetString("status"),
 		}
 		return m.CoreModel.CreateTask(data)
 	case "createLog":
@@ -560,7 +559,11 @@ func (m *Model) renderTasksList() string {
 		s.WriteString("\n")
 	} else {
 		for _, t := range tasks {
-			s.WriteString(detailItemStyle.Render("• " + t.Title + " (" + t.Status + ")"))
+			status := ""
+			if t.CompletedAt != nil {
+				status = " (Completed)"
+			}
+			s.WriteString(detailItemStyle.Render("• " + t.Title + status))
 			s.WriteString("\n")
 		}
 	}
@@ -663,15 +666,6 @@ func createTaskForm() *huh.Form {
 				Title("Description (Optional)").
 				Key("desc").
 				Placeholder("Enter detailed description of task"),
-			huh.NewSelect[string]().
-				Title("Status").
-				Key("status").
-				Options(
-					huh.NewOption("Todo", "todo"),
-					huh.NewOption("In Progress", "in progress"),
-					huh.NewOption("Completed", "completed"),
-					huh.NewOption("Archived", "archived"),
-				),
 		),
 	)
 }

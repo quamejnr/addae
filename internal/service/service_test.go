@@ -3,6 +3,7 @@ package service
 import (
 	"database/sql"
 	"testing"
+	"time"
 
 	adb "github.com/quamejnr/addae/internal/db"
 )
@@ -231,7 +232,7 @@ func TestCreateTask(t *testing.T) {
 	}
 
 	// Create a task
-	err = service.CreateTask(projectID, "Test Task", "Test Description", "todo")
+	err = service.CreateTask(projectID, "Test Task", "Test Description")
 	if err != nil {
 		t.Fatalf("CreateTask failed: %v", err)
 	}
@@ -274,7 +275,7 @@ func TestUpdateTask(t *testing.T) {
 	}
 
 	// Create a task to update
-	err = service.CreateTask(projectID, "Test Task", "Test Description", "todo")
+	err = service.CreateTask(projectID, "Test Task", "Test Description")
 	if err != nil {
 		t.Fatalf("CreateTask failed: %v", err)
 	}
@@ -287,14 +288,16 @@ func TestUpdateTask(t *testing.T) {
 	}
 
 	// Update the task
-	err = service.UpdateTask(taskID, "Updated Task", "Updated Description", "in progress")
+	now := time.Now()
+	err = service.UpdateTask(taskID, "Updated Task", "Updated Description", &now)
 	if err != nil {
 		t.Fatalf("UpdateTask failed: %v", err)
 	}
 
 	// Verify the task was updated
-	var title, desc, status string
-	err = db.QueryRow("SELECT title, desc, status FROM tasks WHERE id = ?", taskID).Scan(&title, &desc, &status)
+	var title, desc string
+	var completedAt sql.NullTime
+	err = db.QueryRow("SELECT title, desc, completed_at FROM tasks WHERE id = ?", taskID).Scan(&title, &desc, &completedAt)
 	if err != nil {
 		t.Fatalf("failed to query for updated task: %v", err)
 	}
@@ -307,8 +310,8 @@ func TestUpdateTask(t *testing.T) {
 		t.Errorf("expected task description to be 'Updated Description', got %s", desc)
 	}
 
-	if status != "in progress" {
-		t.Errorf("expected task status to be 'in progress', got %s", status)
+	if !completedAt.Valid {
+		t.Errorf("expected task to be completed, but completed_at is null")
 	}
 }
 
@@ -338,7 +341,7 @@ func TestDeleteTask(t *testing.T) {
 	}
 
 	// Create a task to delete
-	err = service.CreateTask(projectID, "Test Task", "Test Description", "todo")
+	err = service.CreateTask(projectID, "Test Task", "Test Description")
 	if err != nil {
 		t.Fatalf("CreateTask failed: %v", err)
 	}
@@ -593,11 +596,11 @@ func TestListProjectTasks(t *testing.T) {
 	}
 
 	// Create a few tasks for the project
-	err = service.CreateTask(projectID, "Test Task 1", "Description 1", "todo")
+	err = service.CreateTask(projectID, "Test Task 1", "Description 1")
 	if err != nil {
 		t.Fatalf("CreateTask failed: %v", err)
 	}
-	err = service.CreateTask(projectID, "Test Task 2", "Description 2", "todo")
+	err = service.CreateTask(projectID, "Test Task 2", "Description 2")
 	if err != nil {
 		t.Fatalf("CreateTask failed: %v", err)
 	}

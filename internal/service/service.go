@@ -35,7 +35,7 @@ type Task struct {
 	ProjectID   int
 	Title       string
 	Desc        string
-	Status      string
+	CompletedAt *time.Time
 	DateCreated time.Time
 	DateUpdated time.Time
 }
@@ -106,20 +106,20 @@ func (s *Service) DeleteProject(id int) error {
 }
 
 // Task CRUD operations
-func (s *Service) CreateTask(projectID int, title, desc, status string) error {
+func (s *Service) CreateTask(projectID int, title, desc string) error {
 	_, err := s.db.Exec(`
-		INSERT INTO tasks (project_id, title, desc, status, date_created, date_updated)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-	`, projectID, title, desc, status)
+		INSERT INTO tasks (project_id, title, desc, date_created, date_updated)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`, projectID, title, desc)
 	return err
 }
 
-func (s *Service) UpdateTask(id int, title, desc, status string) error {
+func (s *Service) UpdateTask(id int, title, desc string, completedAt *time.Time) error {
 	result, err := s.db.Exec(`
 		UPDATE tasks 
-		SET title = ?, desc = ?, status = ?, date_updated = CURRENT_TIMESTAMP
+		SET title = ?, desc = ?, completed_at = ?, date_updated = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, title, desc, status, id)
+	`, title, desc, completedAt, id)
 	if err != nil {
 		return err
 	}
@@ -217,7 +217,7 @@ func (s *Service) ListProjects() ([]Project, error) {
 
 func (s *Service) ListProjectTasks(projectID int) ([]Task, error) {
 	rows, err := s.db.Query(`
-		SELECT id, project_id, title, desc, status, date_created, date_updated 
+		SELECT id, project_id, title, desc, completed_at, date_created, date_updated 
 		FROM tasks 
 		WHERE project_id = ?
 	`, projectID)
@@ -229,7 +229,7 @@ func (s *Service) ListProjectTasks(projectID int) ([]Task, error) {
 	var tasks []Task
 	for rows.Next() {
 		var t Task
-		err := rows.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Desc, &t.Status,
+		err := rows.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Desc, &t.CompletedAt,
 			&t.DateCreated, &t.DateUpdated)
 		if err != nil {
 			return nil, err

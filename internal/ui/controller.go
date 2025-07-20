@@ -40,7 +40,6 @@ type ProjectFormData struct {
 type TaskFormData struct {
 	Title  string
 	Desc   string
-	Status string
 }
 
 // LogFormData represents the data structure for log forms
@@ -232,7 +231,7 @@ func (m *CoreModel) CreateTask(data TaskFormData) CoreCommand {
 		return CoreShowError
 	}
 
-	if err := m.service.CreateTask(m.selectedProject.ID, data.Title, data.Desc, data.Status); err != nil {
+	if err := m.service.CreateTask(m.selectedProject.ID, data.Title, data.Desc); err != nil {
 		m.err = err
 		return CoreShowError
 	}
