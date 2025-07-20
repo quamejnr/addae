@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -20,6 +21,7 @@ type Service interface {
 	ListProjectTasks(projectID int) ([]service.Task, error)
 	ListProjectLogs(projectID int) ([]service.Log, error)
 	CreateTask(projectID int, title, desc string) error
+	UpdateTask(id int, title, desc string, completedAt *time.Time) error
 	CreateLog(projectID int, title, desc string) error
 }
 
@@ -45,13 +47,14 @@ const (
 
 type Model struct {
 	*CoreModel
-	list      list.Model
-	form      *huh.Form
-	width     int
-	height    int
-	activeTab detailTab
-	help      help.Model
-	keys      ProjectKeyMap
+	list              list.Model
+	form              *huh.Form
+	width             int
+	height            int
+	activeTab         detailTab
+	help              help.Model
+	keys              ProjectKeyMap
+	selectedTaskIndex int
 }
 
 type ProjectKeyMap struct {
@@ -65,6 +68,10 @@ type ProjectKeyMap struct {
 	TabRight      key.Binding
 	Back          key.Binding
 	Help          key.Binding
+	// Task specific keys
+	ToggleDone key.Binding
+	CursorUp   key.Binding
+	CursorDown key.Binding
 }
 
 func (k ProjectKeyMap) ShortHelp() []key.Binding {
@@ -76,6 +83,7 @@ func (k ProjectKeyMap) FullHelp() [][]key.Binding {
 		{k.UpdateProject, k.CreateTask, k.CreateLog},
 		{k.GotoDetails, k.GotoTasks, k.GotoLogs, k.TabLeft, k.TabRight},
 		{k.Back, k.Help},
+		{k.ToggleDone, k.CursorUp, k.CursorDown},
 	}
 }
 
@@ -119,6 +127,18 @@ var projectKeys = ProjectKeyMap{
 	Help: key.NewBinding(
 		key.WithKeys("?"),
 		key.WithHelp("?", "toggle help"),
+	),
+	ToggleDone: key.NewBinding(
+		key.WithKeys(" "),
+		key.WithHelp("space", "toggle done"),
+	),
+	CursorUp: key.NewBinding(
+		key.WithKeys("up", "k"),
+		key.WithHelp("↑/k", "move up"),
+	),
+	CursorDown: key.NewBinding(
+		key.WithKeys("down", "j"),
+		key.WithHelp("↓/j", "move down"),
 	),
 }
 
@@ -172,14 +192,16 @@ func NewModel(svc Service) (*Model, error) {
 	projectList.SetShowHelp(true)
 
 	return &Model{
-		CoreModel: coreModel,
-		list:      projectList,
-		width:     80,
-		height:    24,
-		activeTab: projectDetailTab,
-		help:      help.New(),
-		keys:      projectKeys,
-	}, nil
+			CoreModel:         coreModel,
+			list:              projectList,
+			width:             80,
+			height:            24,
+			activeTab:         projectDetailTab,
+			help:              help.New(),
+			keys:              projectKeys,
+			selectedTaskIndex: 0,
+		},
+		nil
 }
 
 func (m Model) Init() tea.Cmd {
@@ -204,7 +226,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case listView:
 		return m.updateListView(msg)
 	case projectView:
-		return m.updateProjectView(msg)
+		model, cmd := m.updateProjectViewCommon(msg)
+		if cmd != nil {
+			return model, cmd
+		}
+
+		switch m.activeTab {
+		case tasksTab:
+			return m.updateTasksList(msg)
+		case projectDetailTab:
+			// Handle project detail specific keys here if any
+		case logsTab:
+			// Handle logs specific keys here if any
+		}
+		return m, cmd
 	case updateView:
 		return m.updateFormView(msg, "update")
 	case createView:
@@ -263,6 +298,11 @@ func (m *Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) updateProjectView(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// This function now only handles project-specific actions, not common navigation
+	return m, nil
+}
+
+func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
@@ -292,8 +332,50 @@ func (m *Model) updateProjectView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeTab = (m.activeTab - 1 + 3) % 3
 		case key.Matches(msg, m.keys.Back):
 			m.CoreModel.GoToListView()
+			return m, nil // Return nil cmd to indicate handled
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
+			return m, nil
+		}
+	}
+	return m, nil // No command handled by common navigation
+}
+
+func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
+	tasks := m.CoreModel.GetTasks()
+	if len(tasks) == 0 {
+		return m, nil
+	}
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.CursorUp):
+			if m.selectedTaskIndex > 0 {
+				m.selectedTaskIndex--
+			}
+		case key.Matches(msg, m.keys.CursorDown):
+			if m.selectedTaskIndex < len(tasks)-1 {
+				m.selectedTaskIndex++
+			}
+		case key.Matches(msg, m.keys.ToggleDone):
+			task := tasks[m.selectedTaskIndex]
+			var completedAt *time.Time
+			if task.CompletedAt == nil {
+				now := time.Now()
+				completedAt = &now
+			}
+			cmd := m.CoreModel.ToggleTaskCompletion(task.ID, completedAt)
+			if cmd == CoreShowError {
+				return m, nil
+			}
+			// Refresh tasks after toggling completion
+			m.CoreModel.SelectProject(m.list.Index())
+		case key.Matches(msg, m.keys.Back):
+			m.CoreModel.GoToListView()
+		case key.Matches(msg, m.keys.Help):
+			m.help.ShowAll = !m.help.ShowAll
+			return m, nil
 		}
 	}
 	return m, nil
@@ -374,8 +456,8 @@ func (m *Model) handleFormCompletion(formType string) CoreCommand {
 		return NoCoreCmd
 	case "createTask":
 		data := TaskFormData{
-			Title:  m.form.GetString("title"),
-			Desc:   m.form.GetString("desc"),
+			Title: m.form.GetString("title"),
+			Desc:  m.form.GetString("desc"),
 		}
 		return m.CoreModel.CreateTask(data)
 	case "createLog":
@@ -558,12 +640,18 @@ func (m *Model) renderTasksList() string {
 		s.WriteString(detailItemStyle.Render("No tasks for this project."))
 		s.WriteString("\n")
 	} else {
-		for _, t := range tasks {
-			status := ""
+		for i, t := range tasks {
+			checkbox := "[ ]"
 			if t.CompletedAt != nil {
-				status = " (Completed)"
+				checkbox = "[x]"
 			}
-			s.WriteString(detailItemStyle.Render("• " + t.Title + status))
+			taskLine := checkbox + " " + t.Title
+			if i == m.selectedTaskIndex {
+				taskLine = lipgloss.NewStyle().
+                    Foreground(lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#EE6FF8"}).
+                    Render(taskLine)
+			}
+			s.WriteString(detailItemStyle.Render(taskLine))
 			s.WriteString("\n")
 		}
 	}
@@ -628,6 +716,7 @@ func updateProjectForm(p service.Project) *huh.Form {
 }
 
 func createProjectForm() *huh.Form {
+	defaultValue := "todo"
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
@@ -650,7 +739,8 @@ func createProjectForm() *huh.Form {
 					huh.NewOption("In Progress", "in progress"),
 					huh.NewOption("Done", "completed"),
 					huh.NewOption("Archived", "archived"),
-				),
+				).
+				Value(&defaultValue),
 		),
 	)
 }

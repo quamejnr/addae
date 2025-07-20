@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"time"
 
 	"github.com/quamejnr/addae/internal/service"
 )
@@ -253,6 +254,45 @@ func (m *CoreModel) CreateLog(data LogFormData) CoreCommand {
 	}
 
 	m.state = projectView
+	return CoreRefreshProjectView
+}
+
+// ToggleTaskCompletion toggles the completion status of a task
+func (m *CoreModel) ToggleTaskCompletion(taskID int, completedAt *time.Time) CoreCommand {
+	if m.selectedProject == nil {
+		m.err = errors.New("no project selected")
+		return CoreShowError
+	}
+
+	// Find the task in the current list to get its title and description
+	var taskToUpdate service.Task
+	found := false
+	for _, t := range m.tasks {
+		if t.ID == taskID {
+			taskToUpdate = t
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		m.err = errors.New("task not found")
+		return CoreShowError
+	}
+
+	if err := m.service.UpdateTask(taskID, taskToUpdate.Title, taskToUpdate.Desc, completedAt); err != nil {
+		m.err = err
+		return CoreShowError
+	}
+
+	// Refresh tasks for the current project
+	tasks, err := m.service.ListProjectTasks(m.selectedProject.ID)
+	if err != nil {
+		m.err = err
+		return CoreShowError
+	}
+	m.tasks = tasks
+
 	return CoreRefreshProjectView
 }
 
