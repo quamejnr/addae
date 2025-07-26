@@ -501,7 +501,6 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selectedTaskIndex < len(tasks)-1 {
 				m.selectedTaskIndex++
 			}
-			m.CoreModel.SelectTask(m.selectedTaskIndex)
 		case key.Matches(msg, m.keys.ToggleDone):
 			task := tasks[m.selectedTaskIndex]
 			var completedAt *time.Time
