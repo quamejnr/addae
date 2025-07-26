@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/quamejnr/addae/internal/service"
 )
 
@@ -23,6 +24,7 @@ type CoreModel struct {
 	service         Service
 	state           viewState
 	selectedProject *service.Project
+	selectedTask    *service.Task
 	projects        []service.Project
 	tasks           []service.Task
 	logs            []service.Log
@@ -71,6 +73,11 @@ func (m *CoreModel) GetProjects() []service.Project {
 // GetSelectedProject returns the currently selected project
 func (m *CoreModel) GetSelectedProject() *service.Project {
 	return m.selectedProject
+}
+
+// GetSelectedTask returns the currently selected task
+func (m *CoreModel) GetSelectedTask() *service.Task {
+	return m.selectedTask
 }
 
 // GetTasks returns tasks for the selected project
@@ -296,6 +303,34 @@ func (m *CoreModel) ToggleTaskCompletion(taskID int, completedAt *time.Time) Cor
 	return CoreRefreshProjectView
 }
 
+// SelectTask selects a task by index
+func (m *CoreModel) SelectTask(index int) CoreCommand {
+	if index < 0 || index >= len(m.tasks) {
+		m.err = errors.New("invalid task index")
+		return CoreShowError
+	}
+
+	task := m.tasks[index]
+	m.selectedTask = &task
+	m.state = taskDetailView
+
+	return NoCoreCmd
+}
+
+// GoToTaskDetailView switches to task detail view
+func (m *CoreModel) GoToTaskDetailView() CoreCommand {
+	if m.selectedTask == nil {
+		m.err = errors.New("no task selected")
+		return CoreShowError
+	}
+	m.state = taskDetailView
+	return NoCoreCmd
+}
+
+// GoToEditTaskView switches to edit task view
+
+
+
 // DeleteProject deletes a project by index
 func (m *CoreModel) DeleteProject(index int) CoreCommand {
 	if index < 0 || index >= len(m.projects) {
@@ -331,4 +366,34 @@ func (m *CoreModel) ConfirmDeleteSelected(confirmed bool) CoreCommand {
 	m.state = listView
 	m.selectedProject = nil
 	return CoreRefreshProjects
+}
+
+// GoToDeleteTaskView switches to delete task view
+func (m *CoreModel) GoToDeleteTaskView() CoreCommand {
+	m.state = deleteTaskView
+	return NoCoreCmd
+}
+
+// DeleteTask deletes a task by its ID
+func (m *CoreModel) DeleteTask(taskID int) CoreCommand {
+	if err := m.service.DeleteTask(taskID); err != nil {
+		m.err = err
+		return CoreShowError
+	}
+
+	// Refresh tasks for the current project
+	tasks, err := m.service.ListProjectTasks(m.selectedProject.ID)
+	if err != nil {
+		m.err = err
+		return CoreShowError
+	}
+	m.tasks = tasks
+
+	return CoreRefreshProjectView
+}
+
+func (m *CoreModel) RefreshProjectViewCmd() tea.Cmd {
+	return func() tea.Msg {
+		return CoreRefreshProjectView
+	}
 }

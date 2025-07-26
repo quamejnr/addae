@@ -102,6 +102,19 @@ func (m *MockService) UpdateTask(id int, title, desc string, completedAt *time.T
 	return errors.New("task not found")
 }
 
+func (m *MockService) DeleteTask(id int) error {
+	if m.err != nil {
+		return m.err
+	}
+	for i, t := range m.tasks {
+		if t.ID == id {
+			m.tasks = append(m.tasks[:i], m.tasks[i+1:]...)
+			return nil
+		}
+	}
+	return errors.New("task not found")
+}
+
 func (m *MockService) CreateLog(projectID int, title, desc string) error {
 	if m.err != nil {
 		return m.err
@@ -277,6 +290,80 @@ func TestCreateLog(t *testing.T) {
 	}
 	if mockService.logs[0].Title != "New Log" {
 		t.Errorf("expected log title to be 'New Log', got %s", mockService.logs[0].Title)
+	}
+}
+
+func TestSelectTask(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		tasks:    []service.Task{{ID: 1, ProjectID: 1, Title: "Test Task", Desc: "Test Desc"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0) // Select a project to load tasks
+
+	cmd := coreModel.SelectTask(0)
+	if cmd != NoCoreCmd {
+		t.Errorf("expected NoCoreCmd, got %v", cmd)
+	}
+	if coreModel.GetState() != taskDetailView {
+		t.Errorf("expected state to be taskDetailView, got %v", coreModel.GetState())
+	}
+	if coreModel.GetSelectedTask().Title != "Test Task" {
+		t.Errorf("expected selected task to be 'Test Task', got %s", coreModel.GetSelectedTask().Title)
+	}
+}
+
+func TestGoToTaskDetailView(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		tasks:    []service.Task{{ID: 1, ProjectID: 1, Title: "Test Task", Desc: "Test Desc"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+	coreModel.SelectTask(0)
+
+	cmd := coreModel.GoToTaskDetailView()
+	if cmd != NoCoreCmd {
+		t.Errorf("expected NoCoreCmd, got %v", cmd)
+	}
+	if coreModel.GetState() != taskDetailView {
+		t.Errorf("expected state to be taskDetailView, got %v", coreModel.GetState())
+	}
+}
+
+
+
+func TestEditTask(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		tasks:    []service.Task{{ID: 1, ProjectID: 1, Title: "Original Title", Desc: "Original Desc"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+	coreModel.SelectTask(0)
+
+	updatedTitle := "Updated Title"
+	updatedDesc := "Updated Desc"
+
+	cmd := coreModel.service.UpdateTask(coreModel.GetSelectedTask().ID, updatedTitle, updatedDesc, coreModel.GetSelectedTask().CompletedAt)
+
+	if cmd != nil { // UpdateTask returns an error, not a CoreCommand
+		t.Errorf("expected no error, got %v", cmd)
+	}
+
+	// Manually update the selected task in the coreModel to reflect the service change
+	coreModel.GetSelectedTask().Title = updatedTitle
+	coreModel.GetSelectedTask().Desc = updatedDesc
+
+	// After updating, the state should remain in taskDetailView or return to projectView
+	// depending on the UI flow. For this test, we're just verifying the service call.
+	// The UI state transition is handled by handleFormCompletion in ui.go, which is not part of this unit test.
+
+	if mockService.tasks[0].Title != "Updated Title" {
+		t.Errorf("expected task title to be 'Updated Title', got %s", mockService.tasks[0].Title)
+	}
+	if mockService.tasks[0].Desc != "Updated Desc" {
+		t.Errorf("expected task description to be 'Updated Desc', got %s", mockService.tasks[0].Desc)
 	}
 }
 
