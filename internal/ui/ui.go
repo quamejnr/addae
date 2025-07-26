@@ -401,8 +401,8 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// If no task is selected in detail view, delegate all keys to updateTasksList
 				// This will handle CursorUp/Down and Enter to select a task
 				model, cmd := m.updateTasksList(msg)
-				// If a task was selected by updateTasksList, transition to readonly mode
-				if m.CoreModel.GetSelectedTask() != nil {
+				// If a task was selected by updateTasksList, transition to readonly mode (unless already in edit mode)
+				if m.CoreModel.GetSelectedTask() != nil && m.taskDetailMode != taskDetailEdit {
 					m.taskDetailMode = taskDetailReadonly
 				}
 				return model, cmd
@@ -531,6 +531,16 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.taskDetailMode = taskDetailReadonly
 			return m, nil
+		case key.Matches(msg, m.keys.ExitEdit): // 'e' key for direct edit
+			coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
+			if coreCmd == CoreShowError {
+				return m, nil
+			}
+			m.taskDetailMode = taskDetailEdit // Go directly to edit mode
+			if task := m.CoreModel.GetSelectedTask(); task != nil {
+				m.taskEditForm = newTaskEditForm(*task)
+				return m, m.taskEditForm.Init()
+			}
 		case key.Matches(msg, m.keys.DeleteTask):
 			m.CoreModel.GoToDeleteTaskView()
 			m.form = confirmDeleteTaskForm()
@@ -839,7 +849,6 @@ func (m *Model) renderTasksListPanel() string {
 
 	var s strings.Builder
 
-	s.WriteString(detailSectionStyle.Render("Tasks"))
 	s.WriteString("\n")
 
 	switch m.taskDetailMode {
