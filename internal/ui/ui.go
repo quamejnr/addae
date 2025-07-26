@@ -472,12 +472,10 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.CursorUp):
 			if m.selectedTaskIndex > 0 {
 				m.selectedTaskIndex--
-				m.CoreModel.SelectTask(m.selectedTaskIndex)
 			}
 		case key.Matches(msg, m.keys.CursorDown):
 			if m.selectedTaskIndex < len(tasks)-1 {
 				m.selectedTaskIndex++
-				m.CoreModel.SelectTask(m.selectedTaskIndex)
 			}
 		case key.Matches(msg, m.keys.ToggleDone):
 			task := tasks[m.selectedTaskIndex]
@@ -747,7 +745,11 @@ func (m *Model) renderDetailPanel() string {
 	case projectDetailTab:
 		s.WriteString(m.renderProjectDetails())
 	case tasksTab:
-		return m.renderTasksSplitView()
+		if m.CoreModel.GetSelectedTask() == nil || m.taskDetailMode == taskDetailNone {
+			s.WriteString(m.renderTasksListOnly())
+		} else {
+			return m.renderTasksSplitView()
+		}
 	case logsTab:
 		s.WriteString(m.renderLogsList())
 	}
@@ -940,7 +942,34 @@ func (m *Model) renderProjectDetails() string {
 	return s.String()
 }
 
+func (m *Model) renderTasksListOnly() string {
+	tasks := m.GetTasks()
+	var s strings.Builder
+	s.WriteString("\n")
+	if len(tasks) == 0 {
+		s.WriteString(detailItemStyle.Render("No tasks for this project."))
+		s.WriteString("\n")
+	} else {
+		for i, t := range tasks {
+			checkbox := "[ ]"
+			if t.CompletedAt != nil {
+				checkbox = "[x]"
+			}
+			taskLine := checkbox + " " + t.Title
+			if i == m.selectedTaskIndex {
+				taskLine = lipgloss.NewStyle().
+					Foreground(lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#EE6FF8"}).
+					Render(taskLine)
+			}
+			s.WriteString(detailItemStyle.Render(taskLine))
+			s.WriteString("\n")
+		}
+	}
+	return s.String()
+}
+
 func (m *Model) renderLogsList() string {
+
 	logs := m.GetLogs()
 	var s strings.Builder
 	s.WriteString("\n")
