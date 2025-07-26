@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -66,6 +67,7 @@ type Model struct {
 	selectedTaskIndex int
 	taskViewFocus     focusState
 	taskDetailMode    taskDetailMode
+	taskEditForm      *TaskEditForm
 }
 
 type taskDetailMode int
@@ -343,48 +345,53 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Handle general project view keys FIRST (applies to all tabs and modes)
-		switch {
-		case key.Matches(msg, m.keys.UpdateProject):
-			m.CoreModel.GoToUpdateView()
-			if project := m.CoreModel.GetSelectedProject(); project != nil {
-				m.form = updateProjectForm(*project)
+		// Skip general keys if task edit form is active
+		if m.activeTab == tasksTab && m.taskDetailMode == taskDetailEdit && m.taskEditForm != nil {
+			// Let the form handle the keys - don't process general keys
+		} else {
+			// Handle general project view keys FIRST (applies to all tabs and modes)
+			switch {
+			case key.Matches(msg, m.keys.UpdateProject):
+				m.CoreModel.GoToUpdateView()
+				if project := m.CoreModel.GetSelectedProject(); project != nil {
+					m.form = updateProjectForm(*project)
+					return m, m.form.Init()
+				}
+			case key.Matches(msg, m.keys.CreateTask):
+				m.CoreModel.GoToCreateTaskView()
+				m.form = createTaskForm()
 				return m, m.form.Init()
+			case key.Matches(msg, m.keys.CreateLog):
+				m.CoreModel.GoToCreateLogView()
+				m.form = createLogForm()
+				return m, m.form.Init()
+			case key.Matches(msg, m.keys.GotoDetails):
+				m.activeTab = projectDetailTab
+				m.taskDetailMode = taskDetailNone // Reset task detail mode when switching tabs
+				m.CoreModel.selectedTask = nil
+			case key.Matches(msg, m.keys.GotoTasks):
+				m.activeTab = tasksTab
+				m.taskDetailMode = taskDetailNone // Reset task detail mode when switching to tasks tab
+				m.CoreModel.selectedTask = nil
+			case key.Matches(msg, m.keys.GotoLogs):
+				m.activeTab = logsTab
+				m.taskDetailMode = taskDetailNone // Reset task detail mode when switching tabs
+				m.CoreModel.selectedTask = nil
+			case key.Matches(msg, m.keys.TabRight):
+				m.activeTab = (m.activeTab + 1) % 3
+				m.taskDetailMode = taskDetailNone // Reset task detail mode when switching tabs
+				m.CoreModel.selectedTask = nil
+			case key.Matches(msg, m.keys.TabLeft):
+				m.activeTab = (m.activeTab - 1 + 3) % 3
+				m.taskDetailMode = taskDetailNone // Reset task detail mode when switching tabs
+				m.CoreModel.selectedTask = nil
+			case key.Matches(msg, m.keys.Back):
+				m.CoreModel.GoToListView()
+				return m, nil
+			case key.Matches(msg, m.keys.Help):
+				m.help.ShowAll = !m.help.ShowAll
+				return m, nil
 			}
-		case key.Matches(msg, m.keys.CreateTask):
-			m.CoreModel.GoToCreateTaskView()
-			m.form = createTaskForm()
-			return m, m.form.Init()
-		case key.Matches(msg, m.keys.CreateLog):
-			m.CoreModel.GoToCreateLogView()
-			m.form = createLogForm()
-			return m, m.form.Init()
-		case key.Matches(msg, m.keys.GotoDetails):
-			m.activeTab = projectDetailTab
-			m.taskDetailMode = taskDetailNone // Reset task detail mode when switching tabs
-			m.CoreModel.selectedTask = nil
-		case key.Matches(msg, m.keys.GotoTasks):
-			m.activeTab = tasksTab
-			m.taskDetailMode = taskDetailNone // Reset task detail mode when switching to tasks tab
-			m.CoreModel.selectedTask = nil
-		case key.Matches(msg, m.keys.GotoLogs):
-			m.activeTab = logsTab
-			m.taskDetailMode = taskDetailNone // Reset task detail mode when switching tabs
-			m.CoreModel.selectedTask = nil
-		case key.Matches(msg, m.keys.TabRight):
-			m.activeTab = (m.activeTab + 1) % 3
-			m.taskDetailMode = taskDetailNone // Reset task detail mode when switching tabs
-			m.CoreModel.selectedTask = nil
-		case key.Matches(msg, m.keys.TabLeft):
-			m.activeTab = (m.activeTab - 1 + 3) % 3
-			m.taskDetailMode = taskDetailNone // Reset task detail mode when switching tabs
-			m.CoreModel.selectedTask = nil
-		case key.Matches(msg, m.keys.Back):
-			m.CoreModel.GoToListView()
-			return m, nil
-		case key.Matches(msg, m.keys.Help):
-			m.help.ShowAll = !m.help.ShowAll
-			return m, nil
 		}
 
 		// Handle task-specific keybindings AFTER general navigation
@@ -401,11 +408,11 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return model, cmd
 			case taskDetailReadonly:
 				switch {
-				case key.Matches(msg, m.keys.ExitEdit): // 'e' key to edit
+				case key.Matches(msg, m.keys.ExitEdit):
 					m.taskDetailMode = taskDetailEdit
 					if task := m.CoreModel.GetSelectedTask(); task != nil {
-						m.form = updateTaskForm(*task)
-						return m, m.form.Init()
+						m.taskEditForm = newTaskEditForm(*task)
+						return m, m.taskEditForm.Init()
 					}
 				case key.Matches(msg, m.keys.Back):
 					m.CoreModel.selectedTask = nil
@@ -444,40 +451,44 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			case taskDetailEdit:
-				// Delegate messages to the form
-				updatedForm, cmd := m.form.Update(msg)
-				m.form = updatedForm.(*huh.Form)
+				if m.taskEditForm != nil {
+					var cmd tea.Cmd
+					m.taskEditForm, cmd = m.taskEditForm.Update(msg)
 
-				if m.form.State == huh.StateAborted {
-					m.form = nil
-					m.taskDetailMode = taskDetailReadonly
-					return m, nil
-				} else if m.form.State == huh.StateCompleted {
-					data := TaskFormData{
-						Title: m.form.GetString("title"),
-						Desc:  m.form.GetString("desc"),
+					if m.taskEditForm.IsAborted() {
+						m.taskEditForm = nil
+						m.taskDetailMode = taskDetailReadonly
+						return m, nil
 					}
-					task := m.CoreModel.GetSelectedTask()
-					if task != nil {
-						if err := m.CoreModel.service.UpdateTask(task.ID, data.Title, data.Desc, task.CompletedAt); err != nil {
-							m.CoreModel.err = err
-							return m, nil
-						}
-						task.Title = data.Title
-						task.Desc = data.Desc
-						// Update the task in the tasks slice directly
-						for i, t := range m.CoreModel.tasks {
-							if t.ID == task.ID {
-								m.CoreModel.tasks[i] = *task
-								break
+
+					if m.taskEditForm.IsCompleted() {
+						task := m.CoreModel.GetSelectedTask()
+						if task != nil {
+							title := m.taskEditForm.GetTitle()
+							desc := m.taskEditForm.GetDesc()
+
+							if err := m.CoreModel.service.UpdateTask(task.ID, title, desc, task.CompletedAt); err != nil {
+								m.CoreModel.err = err
+								return m, nil
+							}
+
+							task.Title = title
+							task.Desc = desc
+
+							for i, t := range m.CoreModel.tasks {
+								if t.ID == task.ID {
+									m.CoreModel.tasks[i] = *task
+									break
+								}
 							}
 						}
+						m.taskEditForm = nil
+						m.taskDetailMode = taskDetailReadonly
+						return m, nil
 					}
-					m.form = nil
-					m.taskDetailMode = taskDetailReadonly
-					return m, nil
+
+					return m, cmd
 				}
-				return m, cmd
 			}
 		}
 	}
@@ -879,45 +890,10 @@ func (m *Model) renderTaskReadonlyView() string {
 }
 
 func (m *Model) renderTaskForm() string {
-
-	var s strings.Builder
-
-	s.WriteString(detailSectionStyle.Render("Task Details"))
-	s.WriteString("\n")
-
-	if m.form != nil {
-		s.WriteString(m.form.View())
-	} else {
-		task := m.CoreModel.GetSelectedTask()
-		if task != nil {
-			s.WriteString(detailTitleStyle.Render(task.Title))
-			s.WriteString("\n\n")
-			if task.Desc != "" {
-				s.WriteString(detailItemStyle.Render("Description:"))
-				s.WriteString("\n")
-				s.WriteString(detailItemStyle.Render(task.Desc))
-				s.WriteString("\n")
-			} else {
-				s.WriteString(detailItemStyle.Render("No description"))
-				s.WriteString("\n")
-			}
-
-			// Show completion status
-			if task.CompletedAt != nil {
-				s.WriteString("\n")
-				s.WriteString(detailItemStyle.Render("Status: Completed"))
-				s.WriteString("\n")
-				s.WriteString(detailItemStyle.Render("Completed at: " + task.CompletedAt.Format("2006-01-02 15:04")))
-			} else {
-				s.WriteString("\n")
-				s.WriteString(detailItemStyle.Render("Status: Pending"))
-			}
-		} else {
-			s.WriteString(detailItemStyle.Render("No task selected"))
-		}
+	if m.taskEditForm != nil {
+		return m.taskEditForm.View()
 	}
-
-	return s.String()
+	return "No form"
 }
 
 func (m *Model) renderTabs() string {
@@ -1132,4 +1108,112 @@ func updateTaskForm(t service.Task) *huh.Form {
 				Value(&t.Desc),
 		),
 	)
+}
+
+type TaskEditForm struct {
+	titleInput textinput.Model
+	descInput  textinput.Model
+	focusIndex int
+	completed  bool
+	aborted    bool
+}
+
+func newTaskEditForm(task service.Task) *TaskEditForm {
+	titleInput := textinput.New()
+	titleInput.SetValue(task.Title)
+	titleInput.Focus()
+	titleInput.Width = 50
+
+	descInput := textinput.New()
+	descInput.SetValue(task.Desc)
+	descInput.Width = 50
+
+	return &TaskEditForm{
+		titleInput: titleInput,
+		descInput:  descInput,
+		focusIndex: 0,
+	}
+}
+
+func (f *TaskEditForm) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (f *TaskEditForm) Update(msg tea.Msg) (*TaskEditForm, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			f.aborted = true
+			return f, nil
+		case "enter":
+			if f.focusIndex == 0 {
+				f.focusIndex = 1
+				f.titleInput.Blur()
+				f.descInput.Focus()
+				return f, textinput.Blink
+			} else {
+				f.completed = true
+				return f, nil
+			}
+		case "tab":
+			if f.focusIndex == 0 {
+				f.focusIndex = 1
+				f.titleInput.Blur()
+				f.descInput.Focus()
+			} else {
+				f.focusIndex = 0
+				f.descInput.Blur()
+				f.titleInput.Focus()
+			}
+			return f, textinput.Blink
+		}
+	}
+
+	var cmd tea.Cmd
+	if f.focusIndex == 0 {
+		f.titleInput, cmd = f.titleInput.Update(msg)
+		cmds = append(cmds, cmd)
+	} else {
+		f.descInput, cmd = f.descInput.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+
+	return f, tea.Batch(cmds...)
+}
+
+func (f *TaskEditForm) View() string {
+	var s strings.Builder
+
+	s.WriteString("Edit Task\n\n")
+
+	s.WriteString("Title:\n")
+	s.WriteString(f.titleInput.View())
+	s.WriteString("\n\n")
+
+	s.WriteString("Description:\n")
+	s.WriteString(f.descInput.View())
+	s.WriteString("\n\n")
+
+	s.WriteString("Tab: next field • Enter: save • Esc: cancel")
+
+	return s.String()
+}
+
+func (f *TaskEditForm) GetTitle() string {
+	return f.titleInput.Value()
+}
+
+func (f *TaskEditForm) GetDesc() string {
+	return f.descInput.Value()
+}
+
+func (f *TaskEditForm) IsCompleted() bool {
+	return f.completed
+}
+
+func (f *TaskEditForm) IsAborted() bool {
+	return f.aborted
 }
