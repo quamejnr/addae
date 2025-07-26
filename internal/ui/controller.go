@@ -312,7 +312,7 @@ func (m *CoreModel) SelectTask(index int) CoreCommand {
 
 	task := m.tasks[index]
 	m.selectedTask = &task
-	m.state = taskDetailView
+	m.state = taskSplitView
 
 	return NoCoreCmd
 }
@@ -323,7 +323,17 @@ func (m *CoreModel) GoToTaskDetailView() CoreCommand {
 		m.err = errors.New("no task selected")
 		return CoreShowError
 	}
-	m.state = taskDetailView
+	m.state = taskSplitView
+	return NoCoreCmd
+}
+
+// GoToTaskSplitView switches to task split view
+func (m *CoreModel) GoToTaskSplitView() CoreCommand {
+	if m.selectedTask == nil {
+		m.err = errors.New("no task selected")
+		return CoreShowError
+	}
+	m.state = taskSplitView
 	return NoCoreCmd
 }
 

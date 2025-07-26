@@ -305,8 +305,8 @@ func TestSelectTask(t *testing.T) {
 	if cmd != NoCoreCmd {
 		t.Errorf("expected NoCoreCmd, got %v", cmd)
 	}
-	if coreModel.GetState() != taskDetailView {
-		t.Errorf("expected state to be taskDetailView, got %v", coreModel.GetState())
+	if coreModel.GetState() != taskSplitView {
+		t.Errorf("expected state to be taskSplitView, got %v", coreModel.GetState())
 	}
 	if coreModel.GetSelectedTask().Title != "Test Task" {
 		t.Errorf("expected selected task to be 'Test Task', got %s", coreModel.GetSelectedTask().Title)
@@ -322,12 +322,12 @@ func TestGoToTaskDetailView(t *testing.T) {
 	coreModel.SelectProject(0)
 	coreModel.SelectTask(0)
 
-	cmd := coreModel.GoToTaskDetailView()
+	cmd := coreModel.GoToTaskSplitView()
 	if cmd != NoCoreCmd {
 		t.Errorf("expected NoCoreCmd, got %v", cmd)
 	}
-	if coreModel.GetState() != taskDetailView {
-		t.Errorf("expected state to be taskDetailView, got %v", coreModel.GetState())
+	if coreModel.GetState() != taskSplitView {
+		t.Errorf("expected state to be taskSplitView, got %v", coreModel.GetState())
 	}
 }
 

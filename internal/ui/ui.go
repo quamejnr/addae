@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"errors"
 	"strings"
 	"time"
 
@@ -38,7 +37,7 @@ const (
 	createTaskView
 	createLogView
 	deleteTaskView
-	taskDetailView
+	taskSplitView
 )
 
 type detailTab int
@@ -47,6 +46,13 @@ const (
 	projectDetailTab detailTab = iota
 	tasksTab
 	logsTab
+)
+
+type focusState int
+
+const (
+	focusList focusState = iota
+	focusForm
 )
 
 type Model struct {
@@ -59,7 +65,7 @@ type Model struct {
 	help              help.Model
 	keys              ProjectKeyMap
 	selectedTaskIndex int
-	taskSplitView     bool
+	taskViewFocus     focusState
 }
 
 type ProjectKeyMap struct {
@@ -79,17 +85,18 @@ type ProjectKeyMap struct {
 	CursorUp      key.Binding
 	CursorDown    key.Binding
 	ExitEdit      key.Binding
+	SwitchFocus   key.Binding
 }
 
 func (k ProjectKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.UpdateProject, k.CreateTask, k.CreateLog, k.Back, k.Help}
+	return []key.Binding{k.UpdateProject, k.CreateTask, k.CreateLog, k.Back, k.Help, k.SwitchFocus}
 }
 
 func (k ProjectKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.UpdateProject, k.CreateTask, k.CreateLog},
 		{k.GotoDetails, k.GotoTasks, k.GotoLogs, k.TabLeft, k.TabRight},
-		{k.Back, k.Help},
+		{k.Back, k.Help, k.SwitchFocus},
 		{k.ToggleDone, k.DeleteTask, k.SelectTask, k.CursorUp, k.CursorDown, k.ExitEdit},
 	}
 }
@@ -158,6 +165,10 @@ var projectKeys = ProjectKeyMap{
 	ExitEdit: key.NewBinding(
 		key.WithKeys("e"),
 		key.WithHelp("e", "exit edit"),
+	),
+	SwitchFocus: key.NewBinding(
+		key.WithKeys("tab"),
+		key.WithHelp("tab", "switch focus"),
 	),
 }
 
@@ -277,8 +288,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateFormView(msg, "createLog")
 	case deleteTaskView:
 		return m.updateFormView(msg, "deleteTask")
-	case taskDetailView:
-		return m.updateTaskDetailView(msg)
+	case taskSplitView:
+		return m.updateTaskSplitView(msg)
+	
 	}
 
 	return m, cmd
@@ -326,45 +338,9 @@ func (m *Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if m.activeTab == tasksTab && m.taskSplitView {
-			switch {
-			case key.Matches(msg, m.keys.Back) || key.Matches(msg, m.keys.ExitEdit):
-				m.taskSplitView = false
-				m.form = nil
-				return m, nil
-			}
+		
 
-			if m.form != nil {
-				updatedForm, cmd := m.form.Update(msg)
-				m.form = updatedForm.(*huh.Form)
-
-				if m.form.State == huh.StateAborted {
-					if task := m.CoreModel.GetSelectedTask(); task != nil {
-						m.form = updateTaskForm(*task)
-					}
-					return m, nil
-				} else if m.form.State == huh.StateCompleted {
-					data := TaskFormData{
-						Title: m.form.GetString("title"),
-						Desc:  m.form.GetString("desc"),
-					}
-					task := m.CoreModel.GetSelectedTask()
-					if task != nil {
-						if err := m.CoreModel.service.UpdateTask(task.ID, data.Title, data.Desc, task.CompletedAt); err != nil {
-							m.CoreModel.err = err
-							return m, nil
-						}
-						task.Title = data.Title
-						task.Desc = data.Desc
-					}
-					m.form = updateTaskForm(*task)
-					return m, m.CoreModel.RefreshProjectViewCmd()
-				}
-				return m, cmd
-			}
-			return m, nil
-		}
-
+		// Regular project view handling (when not in task split view)
 		switch {
 		case key.Matches(msg, m.keys.UpdateProject):
 			m.CoreModel.GoToUpdateView()
@@ -409,85 +385,106 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch {
-		case key.Matches(msg, m.keys.CursorUp):
-			if m.selectedTaskIndex > 0 {
-				m.selectedTaskIndex--
-			}
-		case key.Matches(msg, m.keys.CursorDown):
-			if m.selectedTaskIndex < len(tasks)-1 {
-				m.selectedTaskIndex++
-			}
-		case key.Matches(msg, m.keys.ToggleDone):
-			task := tasks[m.selectedTaskIndex]
-			var completedAt *time.Time
-			if task.CompletedAt == nil {
-				now := time.Now()
-				completedAt = &now
-			}
-			cmd := m.CoreModel.ToggleTaskCompletion(task.ID, completedAt)
-			if cmd == CoreShowError {
-				return m, nil
-			}
-			m.CoreModel.SelectProject(m.list.Index())
-		case key.Matches(msg, m.keys.SelectTask):
-			coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
-			if coreCmd == CoreShowError {
-				return m, nil
-			}
-			m.taskSplitView = true
-			if task := m.CoreModel.GetSelectedTask(); task != nil {
-				m.form = updateTaskForm(*task)
+		if m.taskViewFocus == focusList {
+			switch {
+			case key.Matches(msg, m.keys.CursorUp):
+				if m.selectedTaskIndex > 0 {
+					m.selectedTaskIndex--
+				}
+			case key.Matches(msg, m.keys.CursorDown):
+				if m.selectedTaskIndex < len(tasks)-1 {
+					m.selectedTaskIndex++
+				}
+			case key.Matches(msg, m.keys.ToggleDone):
+				task := tasks[m.selectedTaskIndex]
+				var completedAt *time.Time
+				if task.CompletedAt == nil {
+					now := time.Now()
+					completedAt = &now
+				}
+				cmd := m.CoreModel.ToggleTaskCompletion(task.ID, completedAt)
+				if cmd == CoreShowError {
+					return m, nil
+				}
+				m.CoreModel.SelectProject(m.list.Index())
+			case key.Matches(msg, m.keys.SelectTask):
+				coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
+				if coreCmd == CoreShowError {
+					return m, nil
+				}
+				m.CoreModel.GoToTaskSplitView() // Change this
+				if task := m.CoreModel.GetSelectedTask(); task != nil {
+					m.form = updateTaskForm(*task)
+					return m, m.form.Init()
+				}
+			case key.Matches(msg, m.keys.DeleteTask):
+				m.CoreModel.GoToDeleteTaskView()
+				m.form = confirmDeleteTaskForm()
 				return m, m.form.Init()
+			case key.Matches(msg, m.keys.Back):
+				m.CoreModel.GoToListView()
+			case key.Matches(msg, m.keys.Help):
+				m.help.ShowAll = !m.help.ShowAll
+				return m, nil
 			}
-		case key.Matches(msg, m.keys.DeleteTask):
-			m.CoreModel.GoToDeleteTaskView()
-			m.form = confirmDeleteTaskForm()
-			return m, m.form.Init()
-		case key.Matches(msg, m.keys.Back):
-			m.CoreModel.GoToListView()
-		case key.Matches(msg, m.keys.Help):
-			m.help.ShowAll = !m.help.ShowAll
-			return m, nil
 		}
 	}
 	return m, nil
 }
 
-func (m *Model) updateTaskDetailView(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.form != nil {
-		var cmd tea.Cmd
-		updatedForm, cmd := m.form.Update(msg)
-		m.form = updatedForm.(*huh.Form)
-
-		if m.form.State == huh.StateAborted {
-			m.form = nil
-			m.CoreModel.GoToTaskDetailView()
+func (m *Model) updateTaskSplitView(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.Back):
+			m.CoreModel.GoToProjectView()
 			return m, nil
-		} else if m.form.State == huh.StateCompleted {
-			data := TaskFormData{
-				Title: m.form.GetString("title"),
-				Desc:  m.form.GetString("desc"),
+		case key.Matches(msg, m.keys.SwitchFocus):
+			if m.taskViewFocus == focusList {
+				m.taskViewFocus = focusForm
+			} else {
+				m.taskViewFocus = focusList
 			}
-			task := m.CoreModel.GetSelectedTask()
-			if task == nil {
-				m.CoreModel.err = errors.New("no task selected for update")
-				return m, nil
-			}
+			return m, nil
+		}
+	}
+
+	// Delegate messages to the focused component
+	if m.taskViewFocus == focusForm && m.form != nil {
+		return m.updateTaskForm(msg)
+	} else {
+		return m.updateTasksList(msg)
+	}
+}
+
+func (m *Model) updateTaskForm(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	updatedForm, cmd := m.form.Update(msg)
+	m.form = updatedForm.(*huh.Form)
+
+	if m.form.State == huh.StateAborted {
+		m.form = nil
+		m.CoreModel.GoToProjectView()
+		return m, nil
+	} else if m.form.State == huh.StateCompleted {
+		data := TaskFormData{
+			Title: m.form.GetString("title"),
+			Desc:  m.form.GetString("desc"),
+		}
+		task := m.CoreModel.GetSelectedTask()
+		if task != nil {
 			if err := m.CoreModel.service.UpdateTask(task.ID, data.Title, data.Desc, task.CompletedAt); err != nil {
 				m.CoreModel.err = err
 				return m, nil
 			}
 			task.Title = data.Title
 			task.Desc = data.Desc
-			m.form = nil
-			m.CoreModel.GoToTaskDetailView()
+			// Refresh form with updated task
+			m.form = updateTaskForm(*task)
 			return m, m.CoreModel.RefreshProjectViewCmd()
 		}
-		return m, cmd
 	}
-
-	return m, nil
+	return m, cmd
 }
 
 func (m *Model) updateFormView(msg tea.Msg, formType string) (tea.Model, tea.Cmd) {
@@ -642,8 +639,10 @@ func (m Model) View() string {
 	switch m.GetState() {
 	case listView:
 		mainContent = m.renderTabularView()
-	case projectView, taskDetailView:
+	case projectView:
 		mainContent = m.renderDetailPanel()
+	case taskSplitView:
+		mainContent = m.renderTaskSplitView()
 	case updateView, createView, deleteView, createTaskView, createLogView, deleteTaskView:
 		mainContent = m.form.View()
 	}
@@ -685,11 +684,7 @@ func (m *Model) renderDetailPanel() string {
 	case projectDetailTab:
 		s.WriteString(m.renderProjectDetails())
 	case tasksTab:
-		if m.taskSplitView {
-			s.WriteString(m.renderTaskSplitView())
-		} else {
-			s.WriteString(m.renderTasksList())
-		}
+		s.WriteString(m.renderTasksList())
 	case logsTab:
 		s.WriteString(m.renderLogsList())
 	}
@@ -701,62 +696,74 @@ func (m *Model) renderDetailPanel() string {
 }
 
 func (m *Model) renderTaskSplitView() string {
-	leftWidth := (m.width/2 - 6) / 2
-	rightWidth := (m.width/2 - 6) / 2
+	// Calculate widths for split view
+	totalWidth := m.width - 4 // Total available width for the split view
+	leftWidth := totalWidth / 2
+	rightWidth := totalWidth - leftWidth
 
-	leftContent := m.renderTasksListCondensed()
-	leftColumn := leftColumnStyle.
-		Width(leftWidth).
-		Height(m.height - 10).
-		Render(leftContent)
+	// Render left pane (tasks list)
+	leftContent := m.renderTasksList()
+	leftStyle := leftColumnStyle.Width(leftWidth).Height(m.height - 4)
+	if m.taskViewFocus == focusList {
+		leftStyle = leftStyle.BorderForeground(lipgloss.Color("69"))
+	}
+	leftColumn := leftStyle.Render(leftContent)
 
+	// Render right pane (task details/form)
 	rightContent := m.renderTaskForm()
-	rightColumn := rightColumnStyle.
-		Width(rightWidth).
-		Height(m.height - 10).
-		Render(rightContent)
+	rightStyle := rightColumnStyle.Width(rightWidth).Height(m.height - 4)
+	if m.taskViewFocus == focusForm {
+		rightStyle = rightStyle.BorderForeground(lipgloss.Color("69"))
+	}
+	rightColumn := rightStyle.Render(rightContent)
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, rightColumn)
+	return appStyle.Render(
+		lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, rightColumn),
+	)
 }
 
-func (m *Model) renderTasksListCondensed() string {
-	tasks := m.GetTasks()
-	var s strings.Builder
 
-	s.WriteString(detailSectionStyle.Render("Tasks"))
-	s.WriteString("\n")
 
-	if len(tasks) == 0 {
-		s.WriteString(detailItemStyle.Render("No tasks"))
-		return s.String()
-	}
-
-	for i, t := range tasks {
-		checkbox := "[ ]"
-		if t.CompletedAt != nil {
-			checkbox = "[x]"
-		}
-
-		title := t.Title
-		if len(title) > 20 {
-			title = title[:17] + "..."
-		}
-
-		taskLine := checkbox + " " + title
-
-		if i == m.selectedTaskIndex {
-			taskLine = lipgloss.NewStyle().
-				Foreground(lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#EE6FF8"}).
-				Background(lipgloss.Color("236")).
-				Render(taskLine)
-		}
-
-		s.WriteString(detailItemStyle.Render(taskLine))
-		s.WriteString("\n")
-	}
-
-	return s.String()
-}
+// func (m *Model) renderTasksListCondensed() string {
+// 	tasks := m.GetTasks()
+// 	var s strings.Builder
+//
+// 	s.WriteString(detailSectionStyle.Render("Tasks"))
+// 	s.WriteString("\n")
+//
+// 	if len(tasks) == 0 {
+// 		s.WriteString(detailItemStyle.Render("No tasks"))
+// 		return s.String()
+// 	}
+//
+// 	for i, t := range tasks {
+// 		checkbox := "[ ]"
+// 		if t.CompletedAt != nil {
+// 			checkbox = "[x]"
+// 		}
+//
+// 		title := t.Title
+// 		if len(title) > 20 {
+// 			title = title[:17] + "..."
+// 		}
+//
+// 		taskLine := checkbox + " " + title
+//
+// 		if i == m.selectedTaskIndex {
+// 			taskLine = lipgloss.NewStyle().
+// 				Foreground(lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#EE6FF8"}).
+// 				Background(lipgloss.Color("236")).
+// 				Render(taskLine)
+// 		} else {
+// 			taskLine = detailItemStyle.Render(taskLine)
+// 		}
+//
+// 		s.WriteString(detailItemStyle.Render(taskLine))
+// 		s.WriteString("\n")
+// 	}
+//
+// 	return s.String()
+// }
 
 func (m *Model) renderTaskForm() string {
 	var s strings.Builder
@@ -770,11 +777,29 @@ func (m *Model) renderTaskForm() string {
 		task := m.CoreModel.GetSelectedTask()
 		if task != nil {
 			s.WriteString(detailTitleStyle.Render(task.Title))
-			s.WriteString("\n")
+			s.WriteString("\n\n")
 			if task.Desc != "" {
+				s.WriteString(detailItemStyle.Render("Description:"))
+				s.WriteString("\n")
 				s.WriteString(detailItemStyle.Render(task.Desc))
 				s.WriteString("\n")
+			} else {
+				s.WriteString(detailItemStyle.Render("No description"))
+				s.WriteString("\n")
 			}
+
+			// Show completion status
+			if task.CompletedAt != nil {
+				s.WriteString("\n")
+				s.WriteString(detailItemStyle.Render("Status: Completed"))
+				s.WriteString("\n")
+				s.WriteString(detailItemStyle.Render("Completed at: " + task.CompletedAt.Format("2006-01-02 15:04")))
+			} else {
+				s.WriteString("\n")
+				s.WriteString(detailItemStyle.Render("Status: Pending"))
+			}
+		} else {
+			s.WriteString(detailItemStyle.Render("No task selected"))
 		}
 	}
 
