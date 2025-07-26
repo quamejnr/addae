@@ -276,10 +276,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch m.activeTab {
 		case tasksTab:
-			model, cmd = m.updateTasksList(msg)
-			if cmd != nil {
-				return model, cmd
-			}
+			// Handled by updateProjectViewCommon
 		case projectDetailTab:
 		case logsTab:
 		}
@@ -370,10 +367,22 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.CoreModel.selectedTask = nil
 					m.taskDetailMode = taskDetailNone
 					return m, nil
-				case key.Matches(msg, m.keys.CursorUp), key.Matches(msg, m.keys.CursorDown):
-					// Allow navigation of the list even in readonly mode
-					model, cmd := m.updateTasksList(msg)
-					return model, cmd
+				case key.Matches(msg, m.keys.CursorUp):
+					if m.selectedTaskIndex > 0 {
+						m.selectedTaskIndex--
+					}
+					coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
+					if coreCmd == CoreShowError {
+						return m, nil
+					}
+				case key.Matches(msg, m.keys.CursorDown):
+					if m.selectedTaskIndex < len(m.CoreModel.GetTasks())-1 {
+						m.selectedTaskIndex++
+					}
+					coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
+					if coreCmd == CoreShowError {
+						return m, nil
+					}
 				}
 			case taskDetailEdit:
 				// Delegate messages to the form
@@ -477,6 +486,7 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selectedTaskIndex < len(tasks)-1 {
 				m.selectedTaskIndex++
 			}
+			m.CoreModel.SelectTask(m.selectedTaskIndex)
 		case key.Matches(msg, m.keys.ToggleDone):
 			task := tasks[m.selectedTaskIndex]
 			var completedAt *time.Time
