@@ -343,86 +343,7 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if m.activeTab == tasksTab {
-			// Handle task-specific keybindings
-			switch m.taskDetailMode {
-			case taskDetailNone:
-				// If no task is selected in detail view, delegate all keys to updateTasksList
-				// This will handle CursorUp/Down and Enter to select a task
-				model, cmd := m.updateTasksList(msg)
-				// If a task was selected by updateTasksList, transition to readonly mode
-				if m.CoreModel.GetSelectedTask() != nil {
-					m.taskDetailMode = taskDetailReadonly
-				}
-				return model, cmd
-			case taskDetailReadonly:
-				switch {
-				case key.Matches(msg, m.keys.ExitEdit): // 'e' key to edit
-					m.taskDetailMode = taskDetailEdit
-					if task := m.CoreModel.GetSelectedTask(); task != nil {
-						m.form = updateTaskForm(*task)
-						return m, m.form.Init()
-					}
-				case key.Matches(msg, m.keys.Back):
-					m.CoreModel.selectedTask = nil
-					m.taskDetailMode = taskDetailNone
-					return m, nil
-				case key.Matches(msg, m.keys.CursorUp):
-					if m.selectedTaskIndex > 0 {
-						m.selectedTaskIndex--
-					}
-					coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
-					if coreCmd == CoreShowError {
-						return m, nil
-					}
-				case key.Matches(msg, m.keys.CursorDown):
-					if m.selectedTaskIndex < len(m.CoreModel.GetTasks())-1 {
-						m.selectedTaskIndex++
-					}
-					coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
-					if coreCmd == CoreShowError {
-						return m, nil
-					}
-				}
-			case taskDetailEdit:
-				// Delegate messages to the form
-				updatedForm, cmd := m.form.Update(msg)
-				m.form = updatedForm.(*huh.Form)
-
-				if m.form.State == huh.StateAborted {
-					m.form = nil
-					m.taskDetailMode = taskDetailReadonly
-					return m, nil
-				} else if m.form.State == huh.StateCompleted {
-					data := TaskFormData{
-						Title: m.form.GetString("title"),
-						Desc:  m.form.GetString("desc"),
-					}
-					task := m.CoreModel.GetSelectedTask()
-					if task != nil {
-						if err := m.CoreModel.service.UpdateTask(task.ID, data.Title, data.Desc, task.CompletedAt); err != nil {
-							m.CoreModel.err = err
-							return m, nil
-						}
-						task.Title = data.Title
-						task.Desc = data.Desc
-						// Update the task in the tasks slice directly
-						for i, t := range m.CoreModel.tasks {
-							if t.ID == task.ID {
-								m.CoreModel.tasks[i] = *task
-								break
-							}
-						}
-					}
-					m.form = nil
-					m.taskDetailMode = taskDetailReadonly
-					return m, nil
-				}
-				return m, cmd
-			}
-		}
-
-		// General project view keys (applies to all tabs if not handled above)
+		// Handle general project view keys FIRST (applies to all tabs and modes)
 		switch {
 		case key.Matches(msg, m.keys.UpdateProject):
 			m.CoreModel.GoToUpdateView()
@@ -464,6 +385,100 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
 			return m, nil
+		}
+
+		// Handle task-specific keybindings AFTER general navigation
+		if m.activeTab == tasksTab {
+			switch m.taskDetailMode {
+			case taskDetailNone:
+				// If no task is selected in detail view, delegate all keys to updateTasksList
+				// This will handle CursorUp/Down and Enter to select a task
+				model, cmd := m.updateTasksList(msg)
+				// If a task was selected by updateTasksList, transition to readonly mode
+				if m.CoreModel.GetSelectedTask() != nil {
+					m.taskDetailMode = taskDetailReadonly
+				}
+				return model, cmd
+			case taskDetailReadonly:
+				switch {
+				case key.Matches(msg, m.keys.ExitEdit): // 'e' key to edit
+					m.taskDetailMode = taskDetailEdit
+					if task := m.CoreModel.GetSelectedTask(); task != nil {
+						m.form = updateTaskForm(*task)
+						return m, m.form.Init()
+					}
+				case key.Matches(msg, m.keys.Back):
+					m.CoreModel.selectedTask = nil
+					m.taskDetailMode = taskDetailNone
+					return m, nil
+				case key.Matches(msg, m.keys.CursorUp):
+					if m.selectedTaskIndex > 0 {
+						m.selectedTaskIndex--
+					}
+					coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
+					if coreCmd == CoreShowError {
+						return m, nil
+					}
+				case key.Matches(msg, m.keys.CursorDown):
+					if m.selectedTaskIndex < len(m.CoreModel.GetTasks())-1 {
+						m.selectedTaskIndex++
+					}
+					coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
+					if coreCmd == CoreShowError {
+						return m, nil
+					}
+				case key.Matches(msg, m.keys.ToggleDone):
+					tasks := m.CoreModel.GetTasks()
+					if m.selectedTaskIndex >= 0 && m.selectedTaskIndex < len(tasks) {
+						task := tasks[m.selectedTaskIndex]
+						var completedAt *time.Time
+						if task.CompletedAt == nil {
+							now := time.Now()
+							completedAt = &now
+						}
+						cmd := m.CoreModel.ToggleTaskCompletion(task.ID, completedAt)
+						if cmd == CoreShowError {
+							return m, nil
+						}
+						m.CoreModel.SelectProject(m.list.Index())
+					}
+				}
+			case taskDetailEdit:
+				// Delegate messages to the form
+				updatedForm, cmd := m.form.Update(msg)
+				m.form = updatedForm.(*huh.Form)
+
+				if m.form.State == huh.StateAborted {
+					m.form = nil
+					m.taskDetailMode = taskDetailReadonly
+					return m, nil
+				} else if m.form.State == huh.StateCompleted {
+					data := TaskFormData{
+						Title: m.form.GetString("title"),
+						Desc:  m.form.GetString("desc"),
+					}
+					task := m.CoreModel.GetSelectedTask()
+					if task != nil {
+						if err := m.CoreModel.service.UpdateTask(task.ID, data.Title, data.Desc, task.CompletedAt); err != nil {
+							m.CoreModel.err = err
+							return m, nil
+						}
+						task.Title = data.Title
+						task.Desc = data.Desc
+						// Update the task in the tasks slice directly
+						for i, t := range m.CoreModel.tasks {
+							if t.ID == task.ID {
+								m.CoreModel.tasks[i] = *task
+								break
+							}
+						}
+					}
+					m.form = nil
+					m.taskDetailMode = taskDetailReadonly
+					return m, nil
+				}
+				return m, cmd
+			}
 		}
 	}
 	return m, cmd
@@ -1119,4 +1134,3 @@ func updateTaskForm(t service.Task) *huh.Form {
 		),
 	)
 }
-
