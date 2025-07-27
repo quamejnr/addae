@@ -345,11 +345,20 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Handle ONLY the back key for taskDetailReadonly mode FIRST
+		if m.activeTab == tasksTab && m.taskDetailMode == taskDetailReadonly {
+			if key.Matches(msg, m.keys.Back) {
+				m.CoreModel.selectedTask = nil
+				m.taskDetailMode = taskDetailNone
+				return m, nil
+			}
+		}
+
 		// Skip general keys if task edit form is active
 		if m.activeTab == tasksTab && m.taskDetailMode == taskDetailEdit && m.taskEditForm != nil {
 			// Let the form handle the keys - don't process general keys
 		} else {
-			// Handle general project view keys FIRST (applies to all tabs and modes)
+			// Handle general project view keys
 			switch {
 			case key.Matches(msg, m.keys.UpdateProject):
 				m.CoreModel.GoToUpdateView()
@@ -414,10 +423,6 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.taskEditForm = newTaskEditForm(*task)
 						return m, m.taskEditForm.Init()
 					}
-				case key.Matches(msg, m.keys.Back):
-					m.CoreModel.selectedTask = nil
-					m.taskDetailMode = taskDetailNone
-					return m, nil
 				case key.Matches(msg, m.keys.CursorUp):
 					if m.selectedTaskIndex > 0 {
 						m.selectedTaskIndex--
@@ -762,12 +767,12 @@ func (m *Model) renderTabularView() string {
 
 	leftColumn := leftColumnStyle.
 		Width(leftWidth).
-		Height(m.height - 4).
+		Height(m.height - 4). // Use dynamic height instead of fixed 5
 		Render(m.list.View())
 
 	rightColumn := rightColumnStyle.
 		Width(rightWidth).
-		Height(m.height - 4).
+		Height(m.height - 4). // Use dynamic height instead of fixed 5
 		Render(m.renderDetailPanel())
 
 	return appStyle.Render(
@@ -781,8 +786,19 @@ func (m *Model) renderDetailPanel() string {
 		return emptyDetailStyle.Render("← Select a project to view details")
 	}
 
-	var s strings.Builder
+	// Handle tasks split view separately to avoid superimposition
+	if m.activeTab == tasksTab && m.taskDetailMode != taskDetailNone {
+		var s strings.Builder
+		s.WriteString(m.renderTabs())
+		s.WriteString("\n")
+		s.WriteString(m.renderTasksSplitView())
+		s.WriteString("\n\n")
+		s.WriteString(m.help.View(m.keys))
+		return s.String()
+	}
 
+	// Handle all other views normally
+	var s strings.Builder
 	s.WriteString(m.renderTabs())
 	s.WriteString("\n")
 
@@ -790,17 +806,13 @@ func (m *Model) renderDetailPanel() string {
 	case projectDetailTab:
 		s.WriteString(m.renderProjectDetails())
 	case tasksTab:
-		if m.CoreModel.GetSelectedTask() == nil || m.taskDetailMode == taskDetailNone {
-			s.WriteString(m.renderTasksListOnly())
-		} else {
-			return m.renderTasksSplitView()
-		}
+		// This will only be reached when taskDetailMode == taskDetailNone
+		s.WriteString(m.renderTasksListOnly())
 	case logsTab:
 		s.WriteString(m.renderLogsList())
 	}
 
-	s.WriteString("\n")
-	s.WriteString(strings.Repeat("\n", 50))
+	s.WriteString("\n\n")
 	s.WriteString(m.help.View(m.keys))
 	return s.String()
 }
@@ -833,13 +845,14 @@ func (m *Model) renderTasksSplitView() string {
 	}
 
 	leftColumn := leftColumnStyle.
+		PaddingTop(1).
 		Width(leftWidth).
-		Height(m.height - 4).
+		Height(m.height - 8). // Adjusted height to account for tabs and help
 		Render(taskListContent)
 
 	rightColumn := rightColumnStyle.
 		Width(rightWidth).
-		Height(m.height - 4).
+		Height(m.height - 8). // Adjusted height to account for tabs and help
 		Render(m.renderTasksListPanel())
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, rightColumn)
@@ -848,8 +861,6 @@ func (m *Model) renderTasksSplitView() string {
 func (m *Model) renderTasksListPanel() string {
 
 	var s strings.Builder
-
-	s.WriteString("\n")
 
 	switch m.taskDetailMode {
 	case taskDetailNone:
