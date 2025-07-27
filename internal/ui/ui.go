@@ -219,6 +219,10 @@ var (
 				Foreground(lipgloss.Color("240")).
 				Italic(true).
 				MarginTop(5)
+
+	taskEditFormStyle = lipgloss.NewStyle().
+				BorderForeground(lipgloss.Color("240")).
+				Padding(0, 2)
 )
 
 func NewModel(svc Service) (*Model, error) {
@@ -891,13 +895,13 @@ func (m *Model) renderTaskReadonlyView() string {
 	}
 
 	s.WriteString(detailTitleStyle.Render(task.Title))
-	s.WriteString("\n\n")
+	s.WriteString("\n")
 
 	if task.Desc != "" {
 		s.WriteString(detailItemStyle.Render("Description:"))
-		s.WriteString("\n")
+		s.WriteString("\n\n")
 		s.WriteString(detailItemStyle.Render(task.Desc))
-		s.WriteString("\n")
+		s.WriteString("\n\n")
 	} else {
 		s.WriteString(detailItemStyle.Render("No description"))
 		s.WriteString("\n")
@@ -1218,19 +1222,23 @@ func (f *TaskEditForm) Update(msg tea.Msg) (*TaskEditForm, tea.Cmd) {
 func (f *TaskEditForm) View() string {
 	var s strings.Builder
 
-	s.WriteString("Edit Task\n\n")
+	s.WriteString(detailTitleStyle.Render("Edit Task"))
+	s.WriteString("\n")
 
-	s.WriteString("Title:\n")
+	s.WriteString(detailSectionStyle.Render("Title:"))
+	s.WriteString("\n")
 	s.WriteString(f.titleInput.View())
-	s.WriteString("\n\n")
+	s.WriteString("\n")
 
-	s.WriteString("Description:\n")
+	s.WriteString(detailSectionStyle.Render("Description:"))
+	s.WriteString("\n")
 	s.WriteString(f.descInput.View())
 	s.WriteString("\n\n")
 
-	s.WriteString("Tab: next field • Enter: save • Esc: cancel")
+	helpText := detailItemStyle.Render("Tab: next field • Enter: save • Esc: cancel")
+	s.WriteString(helpText)
 
-	return s.String()
+	return taskEditFormStyle.Render(s.String())
 }
 
 func (f *TaskEditForm) GetTitle() string {
