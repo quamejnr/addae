@@ -764,15 +764,16 @@ func (m Model) View() string {
 func (m *Model) renderTabularView() string {
 	leftWidth := m.width/2 - 4
 	rightWidth := m.width/2 - 4
+	panelHeight := m.height - 4 // Consistent with app margins
 
 	leftColumn := leftColumnStyle.
 		Width(leftWidth).
-		Height(m.height - 4). // Use dynamic height instead of fixed 5
+		Height(panelHeight).
 		Render(m.list.View())
 
 	rightColumn := rightColumnStyle.
 		Width(rightWidth).
-		Height(m.height - 4). // Use dynamic height instead of fixed 5
+		Height(panelHeight).
 		Render(m.renderDetailPanel())
 
 	return appStyle.Render(
@@ -786,13 +787,16 @@ func (m *Model) renderDetailPanel() string {
 		return emptyDetailStyle.Render("← Select a project to view details")
 	}
 
+	// Calculate consistent content height (total height - app margins - tabs - help)
+	contentHeight := m.height - 6 // 2 for app margins + 2 for tabs + 2 for help spacing
+
 	// Handle tasks split view separately to avoid superimposition
 	if m.activeTab == tasksTab && m.taskDetailMode != taskDetailNone {
 		var s strings.Builder
 		s.WriteString(m.renderTabs())
 		s.WriteString("\n")
-		s.WriteString(m.renderTasksSplitView())
-		s.WriteString("\n\n")
+		s.WriteString(m.renderTasksSplitView(contentHeight))
+		s.WriteString("\n")
 		s.WriteString(m.help.View(m.keys))
 		return s.String()
 	}
@@ -802,24 +806,30 @@ func (m *Model) renderDetailPanel() string {
 	s.WriteString(m.renderTabs())
 	s.WriteString("\n")
 
+	// Render content with consistent height
+	var content string
 	switch m.activeTab {
 	case projectDetailTab:
-		s.WriteString(m.renderProjectDetails())
+		content = m.renderProjectDetails()
 	case tasksTab:
 		// This will only be reached when taskDetailMode == taskDetailNone
-		s.WriteString(m.renderTasksListOnly())
+		content = m.renderTasksListOnly()
 	case logsTab:
-		s.WriteString(m.renderLogsList())
+		content = m.renderLogsList()
 	}
 
-	s.WriteString("\n\n")
+	// Ensure content takes up the available space consistently
+	contentStyle := lipgloss.NewStyle().Height(contentHeight - 2) // -2 for tab spacing
+	s.WriteString(contentStyle.Render(content))
+	s.WriteString("\n")
 	s.WriteString(m.help.View(m.keys))
 	return s.String()
 }
 
-func (m *Model) renderTasksSplitView() string {
+func (m *Model) renderTasksSplitView(totalHeight int) string {
 	leftWidth := m.width/2 - 4
 	rightWidth := m.width/2 - 4
+	splitHeight := totalHeight - 2 // -2 for spacing
 
 	tasks := m.CoreModel.GetTasks()
 	var taskListContent string
@@ -845,21 +855,19 @@ func (m *Model) renderTasksSplitView() string {
 	}
 
 	leftColumn := leftColumnStyle.
-		PaddingTop(1).
 		Width(leftWidth).
-		Height(m.height - 8). // Adjusted height to account for tabs and help
+		Height(splitHeight).
 		Render(taskListContent)
 
 	rightColumn := rightColumnStyle.
 		Width(rightWidth).
-		Height(m.height - 8). // Adjusted height to account for tabs and help
+		Height(splitHeight).
 		Render(m.renderTasksListPanel())
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, rightColumn)
 }
 
 func (m *Model) renderTasksListPanel() string {
-
 	var s strings.Builder
 
 	switch m.taskDetailMode {
@@ -895,15 +903,19 @@ func (m *Model) renderTaskReadonlyView() string {
 		s.WriteString("\n")
 	}
 
+	style := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{
+		Light: "#B2B2B2",
+		Dark:  "#6A6A6A",
+	})
 	// Show completion status
 	if task.CompletedAt != nil {
 		s.WriteString("\n")
-		s.WriteString(detailItemStyle.Render("Status: Completed"))
+		s.WriteString(style.Render("Status: Completed"))
 		s.WriteString("\n")
-		s.WriteString(detailItemStyle.Render("Completed at: " + task.CompletedAt.Format("2006-01-02 15:04")))
+		s.WriteString(style.Render("Completed at: " + task.CompletedAt.Format("2006-01-02 15:04")))
 	} else {
 		s.WriteString("\n")
-		s.WriteString(detailItemStyle.Render("Status: Pending"))
+		s.WriteString(style.Render("Status: Pending"))
 	}
 
 	return s.String()
@@ -920,7 +932,8 @@ func (m *Model) renderTabs() string {
 	tabStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder(), true).
 		BorderForeground(lipgloss.Color("240")).
-		Padding(0, 1)
+		Padding(0, 1).
+		MarginBottom(1)
 
 	activeTabStyle := tabStyle.
 		BorderForeground(lipgloss.Color("69")).
@@ -946,7 +959,6 @@ func (m *Model) renderProjectDetails() string {
 	project := m.GetSelectedProject()
 	var s strings.Builder
 
-	s.WriteString("\n")
 	s.WriteString(detailTitleStyle.Render(project.Name))
 	s.WriteString("\n")
 	s.WriteString(detailItemStyle.Render("Status: " + project.Status))
@@ -965,7 +977,7 @@ func (m *Model) renderProjectDetails() string {
 func (m *Model) renderTasksListOnly() string {
 	tasks := m.GetTasks()
 	var s strings.Builder
-	s.WriteString("\n")
+
 	if len(tasks) == 0 {
 		s.WriteString(detailItemStyle.Render("No tasks for this project."))
 		s.WriteString("\n")
@@ -989,10 +1001,9 @@ func (m *Model) renderTasksListOnly() string {
 }
 
 func (m *Model) renderLogsList() string {
-
 	logs := m.GetLogs()
 	var s strings.Builder
-	s.WriteString("\n")
+
 	if len(logs) == 0 {
 		s.WriteString(detailItemStyle.Render("No logs for this project."))
 		s.WriteString("\n")
