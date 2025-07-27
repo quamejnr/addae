@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
@@ -68,6 +70,9 @@ type Model struct {
 	taskViewFocus     focusState
 	taskDetailMode    taskDetailMode
 	taskEditForm      *TaskEditForm
+	quickTaskInput    textinput.Model
+	quickInputActive  bool
+	showCompleted     bool
 }
 
 type taskDetailMode int
@@ -79,23 +84,24 @@ const (
 )
 
 type ProjectKeyMap struct {
-	UpdateProject key.Binding
-	CreateTask    key.Binding
-	CreateLog     key.Binding
-	GotoDetails   key.Binding
-	GotoTasks     key.Binding
-	GotoLogs      key.Binding
-	TabLeft       key.Binding
-	TabRight      key.Binding
-	Back          key.Binding
-	Help          key.Binding
-	ToggleDone    key.Binding
-	DeleteTask    key.Binding
-	SelectTask    key.Binding
-	CursorUp      key.Binding
-	CursorDown    key.Binding
-	ExitEdit      key.Binding
-	SwitchFocus   key.Binding
+	UpdateProject   key.Binding
+	CreateTask      key.Binding
+	CreateLog       key.Binding
+	GotoDetails     key.Binding
+	GotoTasks       key.Binding
+	GotoLogs        key.Binding
+	TabLeft         key.Binding
+	TabRight        key.Binding
+	Back            key.Binding
+	Help            key.Binding
+	ToggleDone      key.Binding
+	DeleteTask      key.Binding
+	SelectTask      key.Binding
+	CursorUp        key.Binding
+	CursorDown      key.Binding
+	ExitEdit        key.Binding
+	SwitchFocus     key.Binding
+	ToggleCompleted key.Binding
 }
 
 func (k ProjectKeyMap) ShortHelp() []key.Binding {
@@ -180,6 +186,10 @@ var projectKeys = ProjectKeyMap{
 		key.WithKeys("tab"),
 		key.WithHelp("tab", "switch focus"),
 	),
+	ToggleCompleted: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "toggle completed"),
+	),
 }
 
 var (
@@ -223,6 +233,11 @@ var (
 	taskEditFormStyle = lipgloss.NewStyle().
 				BorderForeground(lipgloss.Color("240")).
 				Padding(0, 2)
+
+	subStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{
+		Light: "#B2B2B2",
+		Dark:  "#6A6A6A",
+	})
 )
 
 func NewModel(svc Service) (*Model, error) {
@@ -230,6 +245,10 @@ func NewModel(svc Service) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	quickInput := textinput.New()
+	quickInput.Placeholder = "Add task"
+	quickInput.Width = 40
 
 	projects := coreModel.GetProjects()
 	items := make([]list.Item, len(projects))
@@ -243,16 +262,18 @@ func NewModel(svc Service) (*Model, error) {
 	projectList.SetShowHelp(true)
 
 	return &Model{
-			CoreModel:         coreModel,
-			list:              projectList,
-			width:             80,
-			height:            24,
-			activeTab:         projectDetailTab,
-			help:              help.New(),
-			keys:              projectKeys,
-			selectedTaskIndex: 0,
-		},
-		nil
+		CoreModel:         coreModel,
+		list:              projectList,
+		width:             80,
+		height:            24,
+		activeTab:         projectDetailTab,
+		help:              help.New(),
+		keys:              projectKeys,
+		selectedTaskIndex: 0,
+		quickTaskInput:    quickInput,
+		quickInputActive:  false,
+		showCompleted:     false,
+	}, nil
 }
 
 func (m Model) Init() tea.Cmd {
@@ -349,6 +370,27 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Quick input handling
+		if m.activeTab == tasksTab && m.quickInputActive {
+			switch msg.String() {
+			case "enter":
+				title := strings.TrimSpace(m.quickTaskInput.Value())
+				if title != "" {
+					m.CoreModel.service.CreateTask(m.GetSelectedProject().ID, title, "")
+					m.loadProjectDetails(m.list.Index())
+					m.quickTaskInput.SetValue("")
+				}
+				m.quickInputActive = false
+				return m, nil
+			case "esc":
+				m.quickInputActive = false
+				m.quickTaskInput.SetValue("")
+				return m, nil
+			default:
+				m.quickTaskInput, cmd = m.quickTaskInput.Update(msg)
+				return m, cmd
+			}
+		}
 		// Handle ONLY the back key for taskDetailReadonly mode FIRST
 		if m.activeTab == tasksTab && m.taskDetailMode == taskDetailReadonly {
 			if key.Matches(msg, m.keys.Back) {
@@ -378,6 +420,13 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.CoreModel.GoToCreateLogView()
 				m.form = createLogForm()
 				return m, m.form.Init()
+			case msg.String() == "n" && m.activeTab == tasksTab:
+				m.quickInputActive = true
+				m.quickTaskInput.Focus()
+				return m, textinput.Blink
+			case key.Matches(msg, m.keys.ToggleCompleted) && m.activeTab == tasksTab:
+				m.showCompleted = !m.showCompleted
+				return m, nil
 			case key.Matches(msg, m.keys.GotoDetails):
 				m.activeTab = projectDetailTab
 				m.taskDetailMode = taskDetailNone // Reset task detail mode when switching tabs
@@ -436,7 +485,7 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					}
 				case key.Matches(msg, m.keys.CursorDown):
-					if m.selectedTaskIndex < len(m.CoreModel.GetTasks())-1 {
+					if m.selectedTaskIndex < m.getMaxNavigableIndex() {
 						m.selectedTaskIndex++
 					}
 					coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
@@ -510,6 +559,19 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Calculate max navigable index
+	var pending []service.Task
+	for _, t := range tasks {
+		if t.CompletedAt == nil {
+			pending = append(pending, t)
+		}
+	}
+
+	maxIndex := len(pending) - 1
+	if m.showCompleted {
+		maxIndex = len(tasks) - 1
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
@@ -518,7 +580,7 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedTaskIndex--
 			}
 		case key.Matches(msg, m.keys.CursorDown):
-			if m.selectedTaskIndex < len(tasks)-1 {
+			if m.selectedTaskIndex < maxIndex {
 				m.selectedTaskIndex++
 			}
 		case key.Matches(msg, m.keys.ToggleDone):
@@ -833,35 +895,78 @@ func (m *Model) renderDetailPanel() string {
 func (m *Model) renderTasksSplitView(totalHeight int) string {
 	leftWidth := m.width/2 - 4
 	rightWidth := m.width/2 - 4
-	splitHeight := totalHeight - 2 // -2 for spacing
+	splitHeight := totalHeight - 2
+
+	var taskListContent strings.Builder
+
+	if m.quickInputActive {
+		taskListContent.WriteString(m.quickTaskInput.View() + "\n\n")
+	}
 
 	tasks := m.CoreModel.GetTasks()
-	var taskListContent string
 	if len(tasks) == 0 {
-		taskListContent = emptyDetailStyle.Render("No tasks for this project.")
+		taskListContent.WriteString(emptyDetailStyle.Render("No tasks for this project."))
 	} else {
-		var s strings.Builder
-		for i, t := range tasks {
-			checkbox := "[ ]"
+		// Separate tasks
+		var pending, completed []service.Task
+		for _, t := range tasks {
 			if t.CompletedAt != nil {
-				checkbox = "[x]"
+				completed = append(completed, t)
+			} else {
+				pending = append(pending, t)
 			}
-			taskLine := checkbox + " " + t.Title
+		}
+
+		// Render pending tasks
+		for i, t := range pending {
+			taskLine := "[ ] " + t.Title
 			if i == m.selectedTaskIndex {
 				taskLine = lipgloss.NewStyle().
 					Foreground(lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#EE6FF8"}).
 					Render(taskLine)
 			}
-			s.WriteString(detailItemStyle.Render(taskLine))
-			s.WriteString("\n")
+			taskListContent.WriteString(detailItemStyle.Render(taskLine))
+			taskListContent.WriteString("\n")
 		}
-		taskListContent = s.String()
+
+		// Completed section
+		if len(completed) > 0 {
+			taskListContent.WriteString("\n")
+
+			toggle := "▶"
+			if m.showCompleted {
+				toggle = "▼"
+			}
+
+			separator := fmt.Sprintf("%s Completed (%d)", toggle, len(completed))
+			taskListContent.WriteString(lipgloss.NewStyle().
+				Foreground(lipgloss.Color("240")).
+				Render(separator))
+			taskListContent.WriteString("\n")
+
+			// Show completed tasks if expanded
+			if m.showCompleted {
+				for i, t := range completed {
+					taskLine := "[x] " + t.Title
+					completedIndex := len(pending) + i
+					if completedIndex == m.selectedTaskIndex {
+						taskLine = lipgloss.NewStyle().
+							Foreground(lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#EE6FF8"}).
+							Render(taskLine)
+					}
+					taskListContent.WriteString(lipgloss.NewStyle().
+						Foreground(lipgloss.Color("240")).
+						Render(taskLine))
+					taskListContent.WriteString("\n")
+				}
+			}
+		}
 	}
 
 	leftColumn := leftColumnStyle.
 		Width(leftWidth).
 		Height(splitHeight).
-		Render(taskListContent)
+		Render(taskListContent.String())
 
 	rightColumn := rightColumnStyle.
 		Width(rightWidth).
@@ -896,30 +1001,16 @@ func (m *Model) renderTaskReadonlyView() string {
 
 	s.WriteString(detailTitleStyle.Render(task.Title))
 	s.WriteString("\n")
+	s.WriteString(task.Desc)
+	s.WriteString("\n\n")
 
-	if task.Desc != "" {
-		s.WriteString(detailItemStyle.Render("Description:"))
-		s.WriteString("\n\n")
-		s.WriteString(detailItemStyle.Render(task.Desc))
-		s.WriteString("\n\n")
-	} else {
-		s.WriteString(detailItemStyle.Render("No description"))
-		s.WriteString("\n")
-	}
-
-	style := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{
-		Light: "#B2B2B2",
-		Dark:  "#6A6A6A",
-	})
 	// Show completion status
 	if task.CompletedAt != nil {
+		s.WriteString(subStyle.Render("Status: Completed"))
 		s.WriteString("\n")
-		s.WriteString(style.Render("Status: Completed"))
-		s.WriteString("\n")
-		s.WriteString(style.Render("Completed at: " + task.CompletedAt.Format("2006-01-02 15:04")))
+		s.WriteString(subStyle.Render("Completed at: " + task.CompletedAt.Format("2006-01-02 15:04")))
 	} else {
-		s.WriteString("\n")
-		s.WriteString(style.Render("Status: Pending"))
+		s.WriteString(subStyle.Render("Status: Pending"))
 	}
 
 	return s.String()
@@ -979,28 +1070,73 @@ func (m *Model) renderProjectDetails() string {
 }
 
 func (m *Model) renderTasksListOnly() string {
-	tasks := m.GetTasks()
 	var s strings.Builder
 
+	if m.quickInputActive {
+		s.WriteString(m.quickTaskInput.View() + "\n\n")
+	}
+
+	tasks := m.GetTasks()
 	if len(tasks) == 0 {
 		s.WriteString(detailItemStyle.Render("No tasks for this project."))
-		s.WriteString("\n")
-	} else {
-		for i, t := range tasks {
-			checkbox := "[ ]"
-			if t.CompletedAt != nil {
-				checkbox = "[x]"
-			}
-			taskLine := checkbox + " " + t.Title
-			if i == m.selectedTaskIndex {
-				taskLine = lipgloss.NewStyle().
-					Foreground(lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#EE6FF8"}).
-					Render(taskLine)
-			}
-			s.WriteString(detailItemStyle.Render(taskLine))
-			s.WriteString("\n")
+		return s.String()
+	}
+
+	// Separate tasks
+	var pending, completed []service.Task
+	for _, t := range tasks {
+		if t.CompletedAt != nil {
+			completed = append(completed, t)
+		} else {
+			pending = append(pending, t)
 		}
 	}
+
+	// Render pending tasks
+	for i, t := range pending {
+		taskLine := "[ ] " + t.Title
+		if i == m.selectedTaskIndex {
+			taskLine = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#EE6FF8"}).
+				Render(taskLine)
+		}
+		s.WriteString(detailItemStyle.Render(taskLine))
+		s.WriteString("\n")
+	}
+
+	// Completed section
+	if len(completed) > 0 {
+		s.WriteString("\n")
+
+		toggle := "▶"
+		if m.showCompleted {
+			toggle = "▼"
+		}
+
+		separator := fmt.Sprintf("%s Completed (%d)", toggle, len(completed))
+		s.WriteString(lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Render(separator))
+		s.WriteString("\n")
+
+		// Show completed tasks if expanded
+		if m.showCompleted {
+			for i, t := range completed {
+				taskLine := "[x] " + t.Title
+				completedIndex := len(pending) + i
+				if completedIndex == m.selectedTaskIndex {
+					taskLine = lipgloss.NewStyle().
+						Foreground(lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#EE6FF8"}).
+						Render(taskLine)
+				}
+				s.WriteString(lipgloss.NewStyle().
+					Foreground(lipgloss.Color("240")).
+					Render(taskLine))
+				s.WriteString("\n")
+			}
+		}
+	}
+
 	return s.String()
 }
 
@@ -1018,6 +1154,22 @@ func (m *Model) renderLogsList() string {
 		}
 	}
 	return s.String()
+}
+
+func (m *Model) getMaxNavigableIndex() int {
+	tasks := m.CoreModel.GetTasks()
+	var pending []service.Task
+	for _, t := range tasks {
+		if t.CompletedAt == nil {
+			pending = append(pending, t)
+		}
+	}
+
+	maxIndex := len(pending) - 1
+	if m.showCompleted {
+		maxIndex = len(tasks) - 1
+	}
+	return maxIndex
 }
 
 func confirmDeleteForm() *huh.Form {
@@ -1147,7 +1299,7 @@ func updateTaskForm(t service.Task) *huh.Form {
 
 type TaskEditForm struct {
 	titleInput textinput.Model
-	descInput  textinput.Model
+	descInput  textarea.Model
 	focusIndex int
 	completed  bool
 	aborted    bool
@@ -1159,9 +1311,12 @@ func newTaskEditForm(task service.Task) *TaskEditForm {
 	titleInput.Focus()
 	titleInput.Width = 50
 
-	descInput := textinput.New()
+	descInput := textarea.New()
 	descInput.SetValue(task.Desc)
-	descInput.Width = 50
+	descInput.SetWidth(70)
+	descInput.SetHeight(5)
+	descInput.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	descInput.ShowLineNumbers = false
 
 	return &TaskEditForm{
 		titleInput: titleInput,
@@ -1180,7 +1335,7 @@ func (f *TaskEditForm) Update(msg tea.Msg) (*TaskEditForm, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "esc":
+		case "esc", "ctrl+c":
 			f.aborted = true
 			return f, nil
 		case "enter":
@@ -1223,19 +1378,19 @@ func (f *TaskEditForm) View() string {
 	var s strings.Builder
 
 	s.WriteString(detailTitleStyle.Render("Edit Task"))
-	s.WriteString("\n")
+	// s.WriteString("\n")
 
-	s.WriteString(detailSectionStyle.Render("Title:"))
+	// s.WriteString(detailSectionStyle.Render("Title:"))
 	s.WriteString("\n")
 	s.WriteString(f.titleInput.View())
 	s.WriteString("\n")
 
-	s.WriteString(detailSectionStyle.Render("Description:"))
+	// s.WriteString(detailSectionStyle.Render("Description:"))
 	s.WriteString("\n")
 	s.WriteString(f.descInput.View())
-	s.WriteString("\n\n")
+	s.WriteString("\n\n\n")
 
-	helpText := detailItemStyle.Render("Tab: next field • Enter: save • Esc: cancel")
+	helpText := subStyle.Render("Tab: next field • Enter: save • Esc: cancel")
 	s.WriteString(helpText)
 
 	return taskEditFormStyle.Render(s.String())
