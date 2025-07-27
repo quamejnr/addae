@@ -426,6 +426,9 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, textinput.Blink
 			case key.Matches(msg, m.keys.ToggleCompleted) && m.activeTab == tasksTab:
 				m.showCompleted = !m.showCompleted
+				if !m.showCompleted && m.selectedTaskIndex > m.getMaxNavigableIndex() {
+					m.selectedTaskIndex = m.getMaxNavigableIndex()
+				}
 				return m, nil
 			case key.Matches(msg, m.keys.GotoDetails):
 				m.activeTab = projectDetailTab
@@ -495,7 +498,7 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case key.Matches(msg, m.keys.ToggleDone):
 					tasks := m.CoreModel.GetTasks()
 					if m.selectedTaskIndex >= 0 && m.selectedTaskIndex < len(tasks) {
-						task := tasks[m.selectedTaskIndex]
+						task := m.getVisualTask(m.selectedTaskIndex)
 						var completedAt *time.Time
 						if task.CompletedAt == nil {
 							now := time.Now()
@@ -506,6 +509,15 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return m, nil
 						}
 						m.CoreModel.SelectProject(m.list.Index())
+						if task.CompletedAt == nil && completedAt != nil {
+							if !m.showCompleted && m.selectedTaskIndex > 0 {
+								m.selectedTaskIndex--
+							}
+							maxIndex := m.getMaxNavigableIndex()
+							if m.selectedTaskIndex > maxIndex {
+								m.selectedTaskIndex = maxIndex
+							}
+						}
 					}
 				}
 			case taskDetailEdit:
@@ -584,7 +596,7 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedTaskIndex++
 			}
 		case key.Matches(msg, m.keys.ToggleDone):
-			task := tasks[m.selectedTaskIndex]
+			task := m.getVisualTask(m.selectedTaskIndex)
 			var completedAt *time.Time
 			if task.CompletedAt == nil {
 				now := time.Now()
@@ -595,6 +607,15 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.CoreModel.SelectProject(m.list.Index())
+			if task.CompletedAt == nil && completedAt != nil {
+				if !m.showCompleted && m.selectedTaskIndex > 0 {
+					m.selectedTaskIndex--
+				}
+			}
+			maxIndex := m.getMaxNavigableIndex()
+			if m.selectedTaskIndex > maxIndex {
+				m.selectedTaskIndex = maxIndex
+			}
 		case key.Matches(msg, m.keys.SelectTask):
 			coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
 			if coreCmd == CoreShowError {
@@ -994,7 +1015,7 @@ func (m *Model) renderTasksListPanel() string {
 func (m *Model) renderTaskReadonlyView() string {
 	var s strings.Builder
 
-	task := m.CoreModel.GetSelectedTask()
+	task := m.getVisualTask(m.selectedTaskIndex)
 	if task == nil {
 		return emptyDetailStyle.Render("No task selected")
 	}
@@ -1170,6 +1191,34 @@ func (m *Model) getMaxNavigableIndex() int {
 		maxIndex = len(tasks) - 1
 	}
 	return maxIndex
+}
+
+func (m *Model) getVisualTask(index int) *service.Task {
+	tasks := m.CoreModel.GetTasks()
+
+	// Separate into pending and completed
+	var pending, completed []service.Task
+	for _, t := range tasks {
+		if t.CompletedAt == nil {
+			pending = append(pending, t)
+		} else {
+			completed = append(completed, t)
+		}
+	}
+
+	// Map visual index to actual task
+	if index < len(pending) {
+		return &pending[index]
+	}
+
+	if m.showCompleted {
+		completedIndex := index - len(pending)
+		if completedIndex >= 0 && completedIndex < len(completed) {
+			return &completed[completedIndex]
+		}
+	}
+
+	return nil
 }
 
 func confirmDeleteForm() *huh.Form {
