@@ -122,10 +122,6 @@ var projectKeys = ProjectKeyMap{
 		key.WithKeys("u"),
 		key.WithHelp("u", "update project"),
 	),
-	CreateTask: key.NewBinding(
-		key.WithKeys("t"),
-		key.WithHelp("t", "create task"),
-	),
 	CreateLog: key.NewBinding(
 		key.WithKeys("l"),
 		key.WithHelp("l", "create log"),
@@ -412,10 +408,6 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.form = updateProjectForm(*project)
 					return m, m.form.Init()
 				}
-			case key.Matches(msg, m.keys.CreateTask):
-				m.CoreModel.GoToCreateTaskView()
-				m.form = createTaskForm()
-				return m, m.form.Init()
 			case key.Matches(msg, m.keys.CreateLog):
 				m.CoreModel.GoToCreateLogView()
 				m.form = createLogForm()
@@ -483,17 +475,15 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.selectedTaskIndex > 0 {
 						m.selectedTaskIndex--
 					}
-					coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
-					if coreCmd == CoreShowError {
-						return m, nil
+					if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
+						m.CoreModel.selectedTask = task
 					}
 				case key.Matches(msg, m.keys.CursorDown):
 					if m.selectedTaskIndex < m.getMaxNavigableIndex() {
 						m.selectedTaskIndex++
 					}
-					coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
-					if coreCmd == CoreShowError {
-						return m, nil
+					if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
+						m.CoreModel.selectedTask = task
 					}
 				case key.Matches(msg, m.keys.ToggleDone):
 					tasks := m.CoreModel.GetTasks()
@@ -579,11 +569,6 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	maxIndex := len(pending) - 1
-	if m.showCompleted {
-		maxIndex = len(tasks) - 1
-	}
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
@@ -592,7 +577,7 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedTaskIndex--
 			}
 		case key.Matches(msg, m.keys.CursorDown):
-			if m.selectedTaskIndex < maxIndex {
+			if m.selectedTaskIndex < m.getMaxNavigableIndex() {
 				m.selectedTaskIndex++
 			}
 		case key.Matches(msg, m.keys.ToggleDone):
@@ -617,18 +602,17 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedTaskIndex = maxIndex
 			}
 		case key.Matches(msg, m.keys.SelectTask):
-			coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
-			if coreCmd == CoreShowError {
-				return m, nil
+			if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
+				m.CoreModel.selectedTask = task
+				m.taskDetailMode = taskDetailReadonly
 			}
-			m.taskDetailMode = taskDetailReadonly
 			return m, nil
-		case key.Matches(msg, m.keys.ExitEdit): // 'e' key for direct edit
-			coreCmd := m.CoreModel.SelectTask(m.selectedTaskIndex)
-			if coreCmd == CoreShowError {
-				return m, nil
+		case key.Matches(msg, m.keys.ExitEdit):
+			// Ensure we have the right task selected based on visual index
+			if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
+				m.CoreModel.selectedTask = task
 			}
-			m.taskDetailMode = taskDetailEdit // Go directly to edit mode
+			m.taskDetailMode = taskDetailEdit
 			if task := m.CoreModel.GetSelectedTask(); task != nil {
 				m.taskEditForm = newTaskEditForm(*task)
 				return m, m.taskEditForm.Init()
