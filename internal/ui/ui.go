@@ -42,6 +42,7 @@ const (
 	createTaskView
 	createLogView
 	deleteTaskView
+	fullscreenLogEditView
 )
 
 type detailTab int
@@ -80,6 +81,7 @@ type Model struct {
 	showCompleted     bool
 	logViewport       viewport.Model
 	glamourRenderer   *glamour.TermRenderer
+	logEditForm       *LogEditForm
 }
 
 type taskDetailMode int
@@ -329,7 +331,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update viewport size
 		rightWidth := m.width/2 - 4
 		m.logViewport.Width = rightWidth
-		m.logViewport.Height = m.height - 8 // Account for tabs, help, etc.
+		m.logViewport.Height = m.height - 8
+
+		// Update log edit form if active
+		if m.logEditForm != nil {
+			m.logEditForm.width = m.width
+			m.logEditForm.height = m.height
+			m.logEditForm.textarea.SetWidth(m.width - 6)
+			m.logEditForm.textarea.SetHeight(m.height - 6)
+		}
 	}
 
 	switch m.GetState() {
@@ -339,14 +349,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model, cmd := m.updateProjectViewCommon(msg)
 		if cmd != nil {
 			return model, cmd
-		}
-
-		switch m.activeTab {
-		case tasksTab:
-			// Handled by updateProjectViewCommon
-		case projectDetailTab:
-		case logsTab:
-			// Handled by updateProjectViewCommon
 		}
 		return m, cmd
 	case updateView:
@@ -361,7 +363,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateFormView(msg, "createLog")
 	case deleteTaskView:
 		return m.updateFormView(msg, "deleteTask")
-
+	case fullscreenLogEditView:
+		return m.updateFullscreenLogEdit(msg)
 	}
 
 	return m, cmd
@@ -401,6 +404,45 @@ func (m *Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		}
+	}
+
+	return m, cmd
+}
+
+func (m *Model) updateFullscreenLogEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.logEditForm == nil {
+		m.CoreModel.GoToProjectView()
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.logEditForm, cmd = m.logEditForm.Update(msg)
+
+	if m.logEditForm.IsAborted() {
+		m.logEditForm = nil
+		m.CoreModel.GoToProjectView()
+		return m, nil
+	}
+
+	if m.logEditForm.IsCompleted() {
+		title, desc := m.logEditForm.GetContent()
+		if title != "" {
+			data := LogFormData{
+				Title: title,
+				Desc:  desc,
+			}
+			coreCmd := m.CoreModel.CreateLog(data)
+			m.logEditForm = nil
+
+			switch coreCmd {
+			case CoreRefreshProjectView:
+				m.loadProjectDetails(m.list.Index())
+			case CoreShowError:
+				// Handle error if needed
+			}
+		}
+		m.CoreModel.GoToProjectView()
+		return m, nil
 	}
 
 	return m, cmd
@@ -478,9 +520,9 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.form.Init()
 				}
 			case key.Matches(msg, m.keys.CreateLog):
-				m.CoreModel.GoToCreateLogView()
-				m.form = createLogForm()
-				return m, m.form.Init()
+				m.CoreModel.state = fullscreenLogEditView
+				m.logEditForm = newLogEditForm(m.width, m.height)
+				return m, m.logEditForm.Init()
 			case msg.String() == "n" && m.activeTab == tasksTab:
 				m.quickInputActive = true
 				m.quickTaskInput.Focus()
@@ -746,6 +788,9 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.taskEditForm.Init()
 			}
 		case key.Matches(msg, m.keys.DeleteTask):
+			if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
+				m.CoreModel.selectedTask = task
+			}
 			m.CoreModel.GoToDeleteTaskView()
 			m.form = confirmDeleteTaskForm()
 			return m, m.form.Init()
@@ -870,18 +915,10 @@ func (m *Model) handleFormCompletion(formType string) CoreCommand {
 			Desc:  m.form.GetString("desc"),
 		}
 		return m.CoreModel.CreateTask(data)
-	case "createLog":
-		data := LogFormData{
-			Title: m.form.GetString("title"),
-			Desc:  m.form.GetString("desc"),
-		}
-		return m.CoreModel.CreateLog(data)
 	case "deleteTask":
 		confirmed := m.form.GetBool("confirm")
 		if confirmed {
-			tasks := m.CoreModel.GetTasks()
-			if m.selectedTaskIndex >= 0 && m.selectedTaskIndex < len(tasks) {
-				task := tasks[m.selectedTaskIndex]
+			if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
 				cmd := m.CoreModel.DeleteTask(task.ID)
 				if cmd == CoreShowError {
 					return CoreShowError
@@ -947,7 +984,10 @@ func (m Model) View() string {
 		mainContent = m.renderTabularView()
 	case projectView:
 		mainContent = m.renderDetailPanel()
-
+	case fullscreenLogEditView:
+		if m.logEditForm != nil {
+			mainContent = m.logEditForm.View()
+		}
 	case updateView, createView, deleteView, createTaskView, createLogView, deleteTaskView:
 		mainContent = m.form.View()
 	}
@@ -1643,5 +1683,139 @@ func (f *TaskEditForm) IsCompleted() bool {
 }
 
 func (f *TaskEditForm) IsAborted() bool {
+	return f.aborted
+}
+
+type LogEditForm struct {
+	titleInput textinput.Model
+	textarea   textarea.Model
+	focusIndex int // 0 = title, 1 = content
+	completed  bool
+	aborted    bool
+	width      int
+	height     int
+}
+
+func newLogEditForm(width, height int) *LogEditForm {
+	titleInput := textinput.New()
+	titleInput.Placeholder = "Title"
+	titleInput.Width = width - 8
+	titleInput.Focus()
+
+	ta := textarea.New()
+	ta.Placeholder = "Write your log content [markdown support]"
+	ta.SetWidth(width - 6)
+	ta.SetHeight(height - 10)
+	ta.ShowLineNumbers = false
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+
+	return &LogEditForm{
+		titleInput: titleInput,
+		textarea:   ta,
+		focusIndex: 0,
+		width:      width,
+		height:     height,
+	}
+}
+
+func (f *LogEditForm) Init() tea.Cmd {
+	return textarea.Blink
+}
+
+func (f *LogEditForm) Update(msg tea.Msg) (*LogEditForm, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		f.width = msg.Width
+		f.height = msg.Height
+		f.titleInput.Width = f.width - 8
+		f.textarea.SetWidth(f.width - 6)
+		f.textarea.SetHeight(f.height - 10)
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc", "ctrl+c":
+			f.aborted = true
+			return f, nil
+		case "ctrl+s":
+			f.completed = true
+			return f, nil
+		case "tab", "enter":
+			if f.focusIndex == 0 {
+				// Move from title to content
+				f.focusIndex = 1
+				f.titleInput.Blur()
+				f.textarea.Focus()
+				return f, textarea.Blink
+			}
+			// If in content and press enter, just pass to textarea
+			var cmd tea.Cmd
+			if msg.String() == "enter" {
+				f.textarea, cmd = f.textarea.Update(msg)
+				return f, cmd
+			}
+		case "shift+tab":
+			if f.focusIndex == 1 {
+				// Move from content back to title
+				f.focusIndex = 0
+				f.textarea.Blur()
+				f.titleInput.Focus()
+				return f, textinput.Blink
+			}
+		}
+	}
+
+	// Update the focused input
+	var cmd tea.Cmd
+	if f.focusIndex == 0 {
+		f.titleInput, cmd = f.titleInput.Update(msg)
+		cmds = append(cmds, cmd)
+	} else {
+		f.textarea, cmd = f.textarea.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+
+	return f, tea.Batch(cmds...)
+}
+
+func (f *LogEditForm) View() string {
+	var s strings.Builder
+
+	// Header
+	s.WriteString("\n")
+	header := detailTitleStyle.Render("Create Log")
+	s.WriteString(header)
+	s.WriteString("\n\n")
+
+	// Title input
+	s.WriteString(f.titleInput.View())
+	s.WriteString("\n\n")
+
+	// Content label and textarea
+	s.WriteString(f.textarea.View())
+	s.WriteString("\n\n\n")
+
+	// Help text
+	helpText := subStyle.Render("Tab: next field • shift+tab: prev field • Ctrl+S: save • Esc: cancel")
+	s.WriteString(helpText)
+
+	// Wrap in dialog style
+	return rightColumnStyle.
+		Width(f.width - 4).
+		Height(f.height - 2).
+		Render(s.String())
+}
+
+func (f *LogEditForm) GetContent() (title, desc string) {
+	title = strings.TrimSpace(f.titleInput.Value())
+	desc = strings.TrimSpace(f.textarea.Value())
+	return title, desc
+}
+
+func (f *LogEditForm) IsCompleted() bool {
+	return f.completed
+}
+
+func (f *LogEditForm) IsAborted() bool {
 	return f.aborted
 }
