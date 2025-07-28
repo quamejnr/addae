@@ -1205,6 +1205,8 @@ func (m *Model) getVisualTask(index int) *service.Task {
 	return nil
 }
 
+var theme *huh.Theme = huh.ThemeDracula()
+
 func confirmDeleteForm() *huh.Form {
 	return huh.NewForm(
 		huh.NewGroup(
@@ -1212,7 +1214,7 @@ func confirmDeleteForm() *huh.Form {
 				Title("Are you sure you want to delete this project?").
 				Key("confirm"),
 		),
-	)
+	).WithTheme(theme)
 }
 
 func confirmDeleteTaskForm() *huh.Form {
@@ -1222,7 +1224,7 @@ func confirmDeleteTaskForm() *huh.Form {
 				Title("Are you sure you want to delete this task?").
 				Key("confirm"),
 		),
-	)
+	).WithTheme(theme)
 }
 
 func updateProjectForm(p service.Project) *huh.Form {
@@ -1252,7 +1254,7 @@ func updateProjectForm(p service.Project) *huh.Form {
 				).
 				Value(&p.Status),
 		),
-	)
+	).WithTheme(theme)
 }
 
 func createProjectForm() *huh.Form {
@@ -1282,7 +1284,7 @@ func createProjectForm() *huh.Form {
 				).
 				Value(&defaultValue),
 		),
-	)
+	).WithTheme(theme)
 }
 
 func createTaskForm() *huh.Form {
@@ -1297,7 +1299,7 @@ func createTaskForm() *huh.Form {
 				Key("desc").
 				Placeholder("Enter detailed description of task"),
 		),
-	)
+	).WithTheme(theme)
 }
 
 func createLogForm() *huh.Form {
@@ -1312,7 +1314,7 @@ func createLogForm() *huh.Form {
 				Key("desc").
 				Placeholder("Enter detailed description of log"),
 		),
-	)
+	).WithTheme(theme)
 }
 
 func updateTaskForm(t service.Task) *huh.Form {
@@ -1327,7 +1329,7 @@ func updateTaskForm(t service.Task) *huh.Form {
 				Key("desc").
 				Value(&t.Desc),
 		),
-	)
+	).WithTheme(theme)
 }
 
 type TaskEditForm struct {
@@ -1411,17 +1413,13 @@ func (f *TaskEditForm) View() string {
 	var s strings.Builder
 
 	s.WriteString(detailTitleStyle.Render("Edit Task"))
-	// s.WriteString("\n")
-
-	// s.WriteString(detailSectionStyle.Render("Title:"))
 	s.WriteString("\n")
 	s.WriteString(f.titleInput.View())
 	s.WriteString("\n")
 
-	// s.WriteString(detailSectionStyle.Render("Description:"))
 	s.WriteString("\n")
 	s.WriteString(f.descInput.View())
-	s.WriteString("\n\n\n")
+	s.WriteString(strings.Repeat("\n", 10))
 
 	helpText := subStyle.Render("Tab: next field • Enter: save • Esc: cancel")
 	s.WriteString(helpText)
