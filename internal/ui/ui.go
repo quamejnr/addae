@@ -251,6 +251,9 @@ var (
 				BorderForeground(lipgloss.Color("240")).
 				Padding(0, 2)
 
+	projectDetailStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("39"))
+
 	subStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{
 		Light: "#B2B2B2",
 		Dark:  "#6A6A6A",
@@ -788,9 +791,6 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.taskEditForm.Init()
 			}
 		case key.Matches(msg, m.keys.DeleteTask):
-			if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
-				m.CoreModel.selectedTask = task
-			}
 			m.CoreModel.GoToDeleteTaskView()
 			m.form = confirmDeleteTaskForm()
 			return m, m.form.Init()
@@ -1295,14 +1295,14 @@ func (m *Model) renderProjectDetails() string {
 
 	s.WriteString(detailTitleStyle.Render(project.Name))
 	s.WriteString("\n")
-	s.WriteString(detailItemStyle.Render("Status: " + project.Status))
-	s.WriteString("\n")
+	s.WriteString(projectDetailStyle.Render("Status: ") + detailItemStyle.Render(project.Status))
+	s.WriteString("\n\n")
 	if project.Summary != "" {
-		s.WriteString(detailItemStyle.Render("Summary: " + project.Summary))
-		s.WriteString("\n")
+		s.WriteString(projectDetailStyle.Render("Summary: ") + detailItemStyle.Render(project.Summary))
+		s.WriteString("\n\n")
 	}
 	if project.Desc != "" {
-		s.WriteString(detailItemStyle.Render("Description: " + project.Desc))
+		s.WriteString(projectDetailStyle.Render("Description: ") + detailItemStyle.Render(project.Desc))
 		s.WriteString("\n")
 	}
 	return s.String()
