@@ -10,7 +10,9 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/quamejnr/addae/internal/service"
@@ -67,12 +69,17 @@ type Model struct {
 	help              help.Model
 	keys              ProjectKeyMap
 	selectedTaskIndex int
+	selectedLogIndex  int
 	taskViewFocus     focusState
+	logViewFocus      focusState
 	taskDetailMode    taskDetailMode
+	logDetailMode     logDetailMode
 	taskEditForm      *TaskEditForm
 	quickTaskInput    textinput.Model
 	quickInputActive  bool
 	showCompleted     bool
+	logViewport       viewport.Model
+	glamourRenderer   *glamour.TermRenderer
 }
 
 type taskDetailMode int
@@ -81,6 +88,13 @@ const (
 	taskDetailNone taskDetailMode = iota
 	taskDetailReadonly
 	taskDetailEdit
+)
+
+type logDetailMode int
+
+const (
+	logDetailNone logDetailMode = iota
+	logDetailReadonly
 )
 
 type ProjectKeyMap struct {
@@ -102,6 +116,7 @@ type ProjectKeyMap struct {
 	ExitEdit        key.Binding
 	SwitchFocus     key.Binding
 	ToggleCompleted key.Binding
+	SwitchLogFocus  key.Binding
 }
 
 func (k ProjectKeyMap) ShortHelp() []key.Binding {
@@ -112,7 +127,7 @@ func (k ProjectKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.UpdateProject, k.CreateTask, k.CreateLog},
 		{k.GotoDetails, k.GotoTasks, k.GotoLogs, k.TabLeft, k.TabRight},
-		{k.Back, k.Help, k.SwitchFocus},
+		{k.Back, k.Help, k.SwitchFocus, k.SwitchLogFocus},
 		{k.ToggleDone, k.DeleteTask, k.SelectTask, k.CursorUp, k.CursorDown, k.ExitEdit},
 	}
 }
@@ -186,6 +201,10 @@ var projectKeys = ProjectKeyMap{
 		key.WithKeys("c"),
 		key.WithHelp("c", "toggle completed"),
 	),
+	SwitchLogFocus: key.NewBinding(
+		key.WithKeys("ctrl+l", "ctrl+h"),
+		key.WithHelp("ctrl+l/ctrl+h", "switch log focus"),
+	),
 }
 
 var (
@@ -257,6 +276,19 @@ func NewModel(svc Service) (*Model, error) {
 	projectList.Title = "Addae"
 	projectList.SetShowHelp(true)
 
+	// Initialize glamour renderer
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(70),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize viewport for log pager
+	vp := viewport.New(70, 20)
+	vp.YPosition = 0
+
 	return &Model{
 		CoreModel:         coreModel,
 		list:              projectList,
@@ -266,9 +298,13 @@ func NewModel(svc Service) (*Model, error) {
 		help:              help.New(),
 		keys:              projectKeys,
 		selectedTaskIndex: 0,
+		selectedLogIndex:  0,
 		quickTaskInput:    quickInput,
 		quickInputActive:  false,
 		showCompleted:     false,
+		logViewport:       vp,
+		glamourRenderer:   renderer,
+		logViewFocus:      focusList,
 	}, nil
 }
 
@@ -286,6 +322,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		listWidth := m.width/2 - 4
 		listHeight := m.height - 4
 		m.list.SetSize(listWidth, listHeight)
+
+		// Update viewport size
+		rightWidth := m.width/2 - 4
+		m.logViewport.Width = rightWidth
+		m.logViewport.Height = m.height - 8 // Account for tabs, help, etc.
 	}
 
 	switch m.GetState() {
@@ -302,6 +343,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Handled by updateProjectViewCommon
 		case projectDetailTab:
 		case logsTab:
+			// Handled by updateProjectViewCommon
 		}
 		return m, cmd
 	case updateView:
@@ -387,11 +429,38 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 		}
+
+		// Handle log viewport navigation when in pager focus
+		if m.activeTab == logsTab && m.logDetailMode == logDetailReadonly && m.logViewFocus == focusForm {
+			switch msg.String() {
+			case "ctrl+h":
+				m.logViewFocus = focusList
+				return m, nil
+			case "":
+				// Stay in pager focus
+				return m, nil
+			default:
+				// Let viewport handle scrolling
+				m.logViewport, cmd = m.logViewport.Update(msg)
+				return m, cmd
+			}
+		}
+
 		// Handle ONLY the back key for taskDetailReadonly mode FIRST
 		if m.activeTab == tasksTab && m.taskDetailMode == taskDetailReadonly {
 			if key.Matches(msg, m.keys.Back) {
 				m.CoreModel.selectedTask = nil
 				m.taskDetailMode = taskDetailNone
+				return m, nil
+			}
+		}
+
+		// Handle ONLY the back key for logDetailReadonly mode FIRST
+		if m.activeTab == logsTab && m.logDetailMode == logDetailReadonly {
+			if key.Matches(msg, m.keys.Back) {
+				m.CoreModel.selectedLog = nil
+				m.logDetailMode = logDetailNone
+				m.logViewFocus = focusList
 				return m, nil
 			}
 		}
@@ -418,30 +487,43 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, textinput.Blink
 			case key.Matches(msg, m.keys.ToggleCompleted) && m.activeTab == tasksTab:
 				m.showCompleted = !m.showCompleted
-				if !m.showCompleted && m.selectedTaskIndex > m.getMaxNavigableIndex() {
-					m.selectedTaskIndex = m.getMaxNavigableIndex()
+				if !m.showCompleted && m.selectedTaskIndex > m.getMaxNavigableTaskIndex() {
+					m.selectedTaskIndex = m.getMaxNavigableTaskIndex()
 				}
 				return m, nil
 			case key.Matches(msg, m.keys.GotoDetails):
 				m.activeTab = projectDetailTab
-				m.taskDetailMode = taskDetailNone // Reset task detail mode when switching tabs
+				m.taskDetailMode = taskDetailNone
+				m.logDetailMode = logDetailNone
 				m.CoreModel.selectedTask = nil
+				m.CoreModel.selectedLog = nil
 			case key.Matches(msg, m.keys.GotoTasks):
 				m.activeTab = tasksTab
-				m.taskDetailMode = taskDetailNone // Reset task detail mode when switching to tasks tab
+				m.taskDetailMode = taskDetailNone
+				m.logDetailMode = logDetailNone
 				m.CoreModel.selectedTask = nil
+				m.CoreModel.selectedLog = nil
 			case key.Matches(msg, m.keys.GotoLogs):
 				m.activeTab = logsTab
-				m.taskDetailMode = taskDetailNone // Reset task detail mode when switching tabs
+				m.taskDetailMode = taskDetailNone
+				m.logDetailMode = logDetailNone
 				m.CoreModel.selectedTask = nil
+				m.CoreModel.selectedLog = nil
+				m.logViewFocus = focusList
 			case key.Matches(msg, m.keys.TabRight):
 				m.activeTab = (m.activeTab + 1) % 3
-				m.taskDetailMode = taskDetailNone // Reset task detail mode when switching tabs
+				m.taskDetailMode = taskDetailNone
+				m.logDetailMode = logDetailNone
 				m.CoreModel.selectedTask = nil
+				m.CoreModel.selectedLog = nil
+				m.logViewFocus = focusList
 			case key.Matches(msg, m.keys.TabLeft):
 				m.activeTab = (m.activeTab - 1 + 3) % 3
-				m.taskDetailMode = taskDetailNone // Reset task detail mode when switching tabs
+				m.taskDetailMode = taskDetailNone
+				m.logDetailMode = logDetailNone
 				m.CoreModel.selectedTask = nil
+				m.CoreModel.selectedLog = nil
+				m.logViewFocus = focusList
 			case key.Matches(msg, m.keys.Back):
 				m.CoreModel.GoToListView()
 				return m, nil
@@ -455,10 +537,7 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.activeTab == tasksTab {
 			switch m.taskDetailMode {
 			case taskDetailNone:
-				// If no task is selected in detail view, delegate all keys to updateTasksList
-				// This will handle CursorUp/Down and Enter to select a task
 				model, cmd := m.updateTasksList(msg)
-				// If a task was selected by updateTasksList, transition to readonly mode (unless already in edit mode)
 				if m.CoreModel.GetSelectedTask() != nil && m.taskDetailMode != taskDetailEdit {
 					m.taskDetailMode = taskDetailReadonly
 				}
@@ -479,7 +558,7 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.CoreModel.selectedTask = task
 					}
 				case key.Matches(msg, m.keys.CursorDown):
-					if m.selectedTaskIndex < m.getMaxNavigableIndex() {
+					if m.selectedTaskIndex < m.getMaxNavigableTaskIndex() {
 						m.selectedTaskIndex++
 					}
 					if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
@@ -503,7 +582,7 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 							if !m.showCompleted && m.selectedTaskIndex > 0 {
 								m.selectedTaskIndex--
 							}
-							maxIndex := m.getMaxNavigableIndex()
+							maxIndex := m.getMaxNavigableTaskIndex()
 							if m.selectedTaskIndex > maxIndex {
 								m.selectedTaskIndex = maxIndex
 							}
@@ -551,6 +630,64 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+
+		// Handle log-specific keybindings AFTER general navigation
+		if m.activeTab == logsTab {
+			switch m.logDetailMode {
+			case logDetailNone:
+				model, cmd := m.updateLogsList(msg)
+				if m.CoreModel.GetSelectedLog() != nil {
+					m.logDetailMode = logDetailReadonly
+					// Update viewport with rendered markdown
+					if log := m.CoreModel.GetSelectedLog(); log != nil {
+						rendered, err := m.glamourRenderer.Render(log.Desc)
+						if err != nil {
+							rendered = log.Desc // fallback to plain text
+						}
+						m.logViewport.SetContent(rendered)
+					}
+				}
+				return model, cmd
+			case logDetailReadonly:
+				// Handle focus switching
+				if m.logViewFocus == focusList {
+					switch {
+					case key.Matches(msg, m.keys.CursorUp):
+						if m.selectedLogIndex > 0 {
+							m.selectedLogIndex--
+							if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
+								m.CoreModel.selectedLog = log
+								// Update viewport content
+								rendered, err := m.glamourRenderer.Render(log.Desc)
+								if err != nil {
+									rendered = log.Desc
+								}
+								m.logViewport.SetContent(rendered)
+								m.logViewport.GotoTop()
+							}
+						}
+					case key.Matches(msg, m.keys.CursorDown):
+						logs := m.CoreModel.GetLogs()
+						if m.selectedLogIndex < len(logs)-1 {
+							m.selectedLogIndex++
+							if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
+								m.CoreModel.selectedLog = log
+								// Update viewport content
+								rendered, err := m.glamourRenderer.Render(log.Desc)
+								if err != nil {
+									rendered = log.Desc
+								}
+								m.logViewport.SetContent(rendered)
+								m.logViewport.GotoTop()
+							}
+						}
+					case msg.String() == "ctrl+l":
+						m.logViewFocus = focusForm
+						return m, nil
+					}
+				}
+			}
+		}
 	}
 	return m, cmd
 }
@@ -561,14 +698,6 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Calculate max navigable index
-	var pending []service.Task
-	for _, t := range tasks {
-		if t.CompletedAt == nil {
-			pending = append(pending, t)
-		}
-	}
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
@@ -577,7 +706,7 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedTaskIndex--
 			}
 		case key.Matches(msg, m.keys.CursorDown):
-			if m.selectedTaskIndex < m.getMaxNavigableIndex() {
+			if m.selectedTaskIndex < m.getMaxNavigableTaskIndex() {
 				m.selectedTaskIndex++
 			}
 		case key.Matches(msg, m.keys.ToggleDone):
@@ -597,7 +726,7 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedTaskIndex--
 				}
 			}
-			maxIndex := m.getMaxNavigableIndex()
+			maxIndex := m.getMaxNavigableTaskIndex()
 			if m.selectedTaskIndex > maxIndex {
 				m.selectedTaskIndex = maxIndex
 			}
@@ -608,7 +737,6 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case key.Matches(msg, m.keys.ExitEdit):
-			// Ensure we have the right task selected based on visual index
 			if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
 				m.CoreModel.selectedTask = task
 			}
@@ -631,43 +759,38 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) updateTaskForm(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-	updatedForm, cmd := m.form.Update(msg)
-	m.form = updatedForm.(*huh.Form)
-
-	if m.form.State == huh.StateAborted {
-		m.form = nil
-		m.taskDetailMode = taskDetailReadonly
-		return m, nil
-	} else if m.form.State == huh.StateCompleted {
-		data := TaskFormData{
-			Title: m.form.GetString("title"),
-			Desc:  m.form.GetString("desc"),
-		}
-		task := m.CoreModel.GetSelectedTask()
-		if task != nil {
-			if err := m.CoreModel.service.UpdateTask(task.ID, data.Title, data.Desc, task.CompletedAt); err != nil {
-				m.CoreModel.err = err
-				return m, nil
-			}
-			task.Title = data.Title
-			task.Desc = data.Desc
-
-			// Update the task in the tasks slice directly
-			for i, t := range m.CoreModel.tasks {
-				if t.ID == task.ID {
-					m.CoreModel.tasks[i] = *task
-					break
-				}
-			}
-
-		}
-		m.form = nil
-		m.taskDetailMode = taskDetailReadonly
+func (m *Model) updateLogsList(msg tea.Msg) (tea.Model, tea.Cmd) {
+	logs := m.CoreModel.GetLogs()
+	if len(logs) == 0 {
 		return m, nil
 	}
-	return m, cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.CursorUp):
+			if m.selectedLogIndex > 0 {
+				m.selectedLogIndex--
+			}
+		case key.Matches(msg, m.keys.CursorDown):
+			if m.selectedLogIndex < len(logs)-1 {
+				m.selectedLogIndex++
+			}
+		case key.Matches(msg, m.keys.SelectTask): // Reuse enter key
+			if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
+				m.CoreModel.selectedLog = log
+				m.logDetailMode = logDetailReadonly
+				m.logViewFocus = focusList
+			}
+			return m, nil
+		case key.Matches(msg, m.keys.Back):
+			m.CoreModel.GoToListView()
+		case key.Matches(msg, m.keys.Help):
+			m.help.ShowAll = !m.help.ShowAll
+			return m, nil
+		}
+	}
+	return m, nil
 }
 
 func (m *Model) updateFormView(msg tea.Msg, formType string) (tea.Model, tea.Cmd) {
@@ -835,7 +958,7 @@ func (m Model) View() string {
 func (m *Model) renderTabularView() string {
 	leftWidth := m.width/2 - 4
 	rightWidth := m.width/2 - 4
-	panelHeight := m.height - 4 // Consistent with app margins
+	panelHeight := m.height - 4
 
 	leftColumn := leftColumnStyle.
 		Width(leftWidth).
@@ -858,10 +981,9 @@ func (m *Model) renderDetailPanel() string {
 		return emptyDetailStyle.Render("← Select a project to view details")
 	}
 
-	// Calculate consistent content height (total height - app margins - tabs - help)
-	contentHeight := m.height - 6 // 2 for app margins + 2 for tabs + 2 for help spacing
+	contentHeight := m.height - 6
 
-	// Handle tasks split view separately to avoid superimposition
+	// Handle tasks split view
 	if m.activeTab == tasksTab && m.taskDetailMode != taskDetailNone {
 		var s strings.Builder
 		s.WriteString(m.renderTabs())
@@ -872,28 +994,105 @@ func (m *Model) renderDetailPanel() string {
 		return s.String()
 	}
 
+	// Handle logs split view
+	if m.activeTab == logsTab && m.logDetailMode != logDetailNone {
+		var s strings.Builder
+		s.WriteString(m.renderTabs())
+		s.WriteString("\n")
+		s.WriteString(m.renderLogsSplitView(contentHeight))
+		s.WriteString("\n")
+		s.WriteString(m.help.View(m.keys))
+		return s.String()
+	}
+
 	// Handle all other views normally
 	var s strings.Builder
 	s.WriteString(m.renderTabs())
 	s.WriteString("\n")
 
-	// Render content with consistent height
 	var content string
 	switch m.activeTab {
 	case projectDetailTab:
 		content = m.renderProjectDetails()
 	case tasksTab:
-		// This will only be reached when taskDetailMode == taskDetailNone
 		content = m.renderTasksListOnly()
 	case logsTab:
-		content = m.renderLogsList()
+		content = m.renderLogsListOnly()
 	}
 
-	// Ensure content takes up the available space consistently
-	contentStyle := lipgloss.NewStyle().Height(contentHeight - 2) // -2 for tab spacing
+	contentStyle := lipgloss.NewStyle().Height(contentHeight - 2)
 	s.WriteString(contentStyle.Render(content))
 	s.WriteString("\n")
 	s.WriteString(m.help.View(m.keys))
+	return s.String()
+}
+
+func (m *Model) renderLogsSplitView(totalHeight int) string {
+	leftWidth := m.width/2 - 4
+	rightWidth := m.width/2 - 4
+	splitHeight := totalHeight - 2
+
+	var logListContent strings.Builder
+
+	logs := m.CoreModel.GetLogs()
+	if len(logs) == 0 {
+		logListContent.WriteString(emptyDetailStyle.Render("No logs for this project."))
+	} else {
+		for i, l := range logs {
+			logLine := "• " + l.Title
+			if i == m.selectedLogIndex {
+				logLine = lipgloss.NewStyle().
+					Foreground(lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#EE6FF8"}).
+					Render(logLine)
+			}
+			logListContent.WriteString(detailItemStyle.Render(logLine))
+			logListContent.WriteString("\n")
+		}
+	}
+
+	// Add focus indicator
+	focusIndicator := ""
+	if m.logViewFocus == focusList {
+		focusIndicator = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("69")).
+			Render("[List Focus]")
+	} else {
+		focusIndicator = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Render("[Pager Focus]")
+	}
+	logListContent.WriteString("\n" + focusIndicator)
+
+	leftColumn := leftColumnStyle.
+		Width(leftWidth).
+		Height(splitHeight).
+		Render(logListContent.String())
+
+	rightColumn := rightColumnStyle.
+		Width(rightWidth).
+		Height(splitHeight).
+		Render(m.renderLogDetailPanel())
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, rightColumn)
+}
+
+func (m *Model) renderLogDetailPanel() string {
+	if m.logDetailMode == logDetailNone {
+		return emptyDetailStyle.Render("← Select a log to view details")
+	}
+
+	log := m.CoreModel.GetSelectedLog()
+	if log == nil {
+		return emptyDetailStyle.Render("No log selected")
+	}
+
+	var s strings.Builder
+	s.WriteString(detailTitleStyle.PaddingLeft(2).Render(log.Title))
+	// s.WriteString("\n\n")
+
+	// Show the viewport content
+	s.WriteString(m.logViewport.View())
+
 	return s.String()
 }
 
@@ -912,7 +1111,6 @@ func (m *Model) renderTasksSplitView(totalHeight int) string {
 	if len(tasks) == 0 {
 		taskListContent.WriteString(emptyDetailStyle.Render("No tasks for this project."))
 	} else {
-		// Separate tasks
 		var pending, completed []service.Task
 		for _, t := range tasks {
 			if t.CompletedAt != nil {
@@ -922,7 +1120,6 @@ func (m *Model) renderTasksSplitView(totalHeight int) string {
 			}
 		}
 
-		// Render pending tasks
 		for i, t := range pending {
 			taskLine := "[ ] " + t.Title
 			if i == m.selectedTaskIndex {
@@ -934,7 +1131,6 @@ func (m *Model) renderTasksSplitView(totalHeight int) string {
 			taskListContent.WriteString("\n")
 		}
 
-		// Completed section
 		if len(completed) > 0 {
 			taskListContent.WriteString("\n")
 
@@ -949,7 +1145,6 @@ func (m *Model) renderTasksSplitView(totalHeight int) string {
 				Render(separator))
 			taskListContent.WriteString("\n")
 
-			// Show completed tasks if expanded
 			if m.showCompleted {
 				for i, t := range completed {
 					taskLine := "[x] " + t.Title
@@ -1006,10 +1201,9 @@ func (m *Model) renderTaskReadonlyView() string {
 
 	s.WriteString(detailTitleStyle.Render(task.Title))
 	s.WriteString("\n")
-	s.WriteString(task.Desc)
+	s.WriteString(detailItemStyle.Render(task.Desc))
 	s.WriteString("\n\n")
 
-	// Show completion status
 	if task.CompletedAt != nil {
 		s.WriteString(subStyle.Render("Status: Completed"))
 		s.WriteString("\n")
@@ -1087,7 +1281,6 @@ func (m *Model) renderTasksListOnly() string {
 		return s.String()
 	}
 
-	// Separate tasks
 	var pending, completed []service.Task
 	for _, t := range tasks {
 		if t.CompletedAt != nil {
@@ -1097,7 +1290,6 @@ func (m *Model) renderTasksListOnly() string {
 		}
 	}
 
-	// Render pending tasks
 	for i, t := range pending {
 		taskLine := "[ ] " + t.Title
 		if i == m.selectedTaskIndex {
@@ -1109,7 +1301,6 @@ func (m *Model) renderTasksListOnly() string {
 		s.WriteString("\n")
 	}
 
-	// Completed section
 	if len(completed) > 0 {
 		s.WriteString("\n")
 
@@ -1124,7 +1315,6 @@ func (m *Model) renderTasksListOnly() string {
 			Render(separator))
 		s.WriteString("\n")
 
-		// Show completed tasks if expanded
 		if m.showCompleted {
 			for i, t := range completed {
 				taskLine := "[x] " + t.Title
@@ -1145,7 +1335,7 @@ func (m *Model) renderTasksListOnly() string {
 	return s.String()
 }
 
-func (m *Model) renderLogsList() string {
+func (m *Model) renderLogsListOnly() string {
 	logs := m.GetLogs()
 	var s strings.Builder
 
@@ -1153,15 +1343,21 @@ func (m *Model) renderLogsList() string {
 		s.WriteString(detailItemStyle.Render("No logs for this project."))
 		s.WriteString("\n")
 	} else {
-		for _, l := range logs {
-			s.WriteString(detailItemStyle.Render("• " + l.Title))
+		for i, l := range logs {
+			logLine := "• " + l.Title
+			if i == m.selectedLogIndex {
+				logLine = lipgloss.NewStyle().
+					Foreground(lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#EE6FF8"}).
+					Render(logLine)
+			}
+			s.WriteString(detailItemStyle.Render(logLine))
 			s.WriteString("\n")
 		}
 	}
 	return s.String()
 }
 
-func (m *Model) getMaxNavigableIndex() int {
+func (m *Model) getMaxNavigableTaskIndex() int {
 	tasks := m.CoreModel.GetTasks()
 	var pending []service.Task
 	for _, t := range tasks {
@@ -1180,7 +1376,6 @@ func (m *Model) getMaxNavigableIndex() int {
 func (m *Model) getVisualTask(index int) *service.Task {
 	tasks := m.CoreModel.GetTasks()
 
-	// Separate into pending and completed
 	var pending, completed []service.Task
 	for _, t := range tasks {
 		if t.CompletedAt == nil {
@@ -1190,7 +1385,6 @@ func (m *Model) getVisualTask(index int) *service.Task {
 		}
 	}
 
-	// Map visual index to actual task
 	if index < len(pending) {
 		return &pending[index]
 	}
@@ -1202,6 +1396,14 @@ func (m *Model) getVisualTask(index int) *service.Task {
 		}
 	}
 
+	return nil
+}
+
+func (m *Model) getLogAtIndex(index int) *service.Log {
+	logs := m.CoreModel.GetLogs()
+	if index >= 0 && index < len(logs) {
+		return &logs[index]
+	}
 	return nil
 }
 
@@ -1312,7 +1514,8 @@ func createLogForm() *huh.Form {
 			huh.NewText().
 				Title("Description (Optional)").
 				Key("desc").
-				Placeholder("Enter detailed description of log"),
+				Placeholder("Enter detailed description of log").
+                CharLimit(5000),
 		),
 	).WithTheme(theme)
 }

@@ -25,6 +25,7 @@ type CoreModel struct {
 	state           viewState
 	selectedProject *service.Project
 	selectedTask    *service.Task
+	selectedLog     *service.Log
 	projects        []service.Project
 	tasks           []service.Task
 	logs            []service.Log
@@ -41,8 +42,8 @@ type ProjectFormData struct {
 
 // TaskFormData represents the data structure for task forms
 type TaskFormData struct {
-	Title  string
-	Desc   string
+	Title string
+	Desc  string
 }
 
 // LogFormData represents the data structure for log forms
@@ -78,6 +79,11 @@ func (m *CoreModel) GetSelectedProject() *service.Project {
 // GetSelectedTask returns the currently selected task
 func (m *CoreModel) GetSelectedTask() *service.Task {
 	return m.selectedTask
+}
+
+// GetSelectedLog returns the currently selected log
+func (m *CoreModel) GetSelectedLog() *service.Log {
+	return m.selectedLog
 }
 
 // GetTasks returns tasks for the selected project
@@ -313,18 +319,25 @@ func (m *CoreModel) SelectTask(index int) CoreCommand {
 	task := m.tasks[index]
 	m.selectedTask = &task
 	m.state = projectView
-	
 
 	return NoCoreCmd
 }
 
+// SelectLog selects a log by index
+func (m *CoreModel) SelectLog(index int) CoreCommand {
+	if index < 0 || index >= len(m.logs) {
+		m.err = errors.New("invalid log index")
+		return CoreShowError
+	}
 
+	log := m.logs[index]
+	m.selectedLog = &log
+	m.state = projectView
 
-
+	return NoCoreCmd
+}
 
 // GoToEditTaskView switches to edit task view
-
-
 
 // DeleteProject deletes a project by index
 func (m *CoreModel) DeleteProject(index int) CoreCommand {

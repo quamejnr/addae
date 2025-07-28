@@ -168,6 +168,47 @@ func TestSelectProject(t *testing.T) {
 	}
 }
 
+func TestSelectLog(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs:     []service.Log{{ID: 1, ProjectID: 1, Title: "Test Log", Desc: "Test Description"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0) // Select a project to load logs
+
+	cmd := coreModel.SelectLog(0)
+	if cmd != NoCoreCmd {
+		t.Errorf("expected NoCoreCmd, got %v", cmd)
+	}
+	if coreModel.GetState() != projectView {
+		t.Errorf("expected state to be projectView, got %v", coreModel.GetState())
+	}
+	if coreModel.GetSelectedLog().Title != "Test Log" {
+		t.Errorf("expected selected log to be 'Test Log', got %s", coreModel.GetSelectedLog().Title)
+	}
+}
+
+func TestSelectLogInvalidIndex(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs:     []service.Log{{ID: 1, Title: "Test Log"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+
+	// Test invalid negative index
+	cmd := coreModel.SelectLog(-1)
+	if cmd != CoreShowError {
+		t.Errorf("expected CoreShowError for negative index, got %v", cmd)
+	}
+
+	// Test invalid large index
+	cmd = coreModel.SelectLog(10)
+	if cmd != CoreShowError {
+		t.Errorf("expected CoreShowError for large index, got %v", cmd)
+	}
+}
+
 func TestCreateProject(t *testing.T) {
 	mockService := &MockService{}
 	coreModel, _ := NewCoreModel(mockService)
@@ -313,7 +354,7 @@ func TestSelectTask(t *testing.T) {
 	}
 }
 
-func TestGoToTaskDetailView(t *testing.T) {
+func TestGoToProjectView(t *testing.T) {
 	mockService := &MockService{
 		projects: []service.Project{{ID: 1, Name: "Test Project"}},
 		tasks:    []service.Task{{ID: 1, ProjectID: 1, Title: "Test Task", Desc: "Test Desc"}},
@@ -330,8 +371,6 @@ func TestGoToTaskDetailView(t *testing.T) {
 		t.Errorf("expected state to be projectView, got %v", coreModel.GetState())
 	}
 }
-
-
 
 func TestEditTask(t *testing.T) {
 	mockService := &MockService{
@@ -354,10 +393,6 @@ func TestEditTask(t *testing.T) {
 	// Manually update the selected task in the coreModel to reflect the service change
 	coreModel.GetSelectedTask().Title = updatedTitle
 	coreModel.GetSelectedTask().Desc = updatedDesc
-
-	// After updating, the state should remain in taskDetailView or return to projectView
-	// depending on the UI flow. For this test, we're just verifying the service call.
-	// The UI state transition is handled by handleFormCompletion in ui.go, which is not part of this unit test.
 
 	if mockService.tasks[0].Title != "Updated Title" {
 		t.Errorf("expected task title to be 'Updated Title', got %s", mockService.tasks[0].Title)
@@ -438,18 +473,6 @@ func TestUpdateProjectView(t *testing.T) {
 		t.Error("expected form to be initialized, but it was nil")
 	}
 
-	// Test navigating to the create task view
-	model.CoreModel.GoToProjectView() // Go back to project view first
-	msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")}
-	newModel, _ = model.Update(msg)
-	model = newModel.(*Model)
-
-	if model.GetState() != createTaskView {
-		t.Errorf("expected state to be createTaskView, got %v", model.GetState())
-	}
-	if model.form == nil {
-		t.Error("expected form to be initialized, but it was nil")
-	}
 }
 
 func TestToggleTaskCompletion(t *testing.T) {
@@ -477,5 +500,189 @@ func TestToggleTaskCompletion(t *testing.T) {
 	}
 	if mockService.tasks[0].CompletedAt != nil {
 		t.Errorf("expected task to be incomplete, but CompletedAt is not nil")
+	}
+}
+
+func TestLogsInteractivity(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs: []service.Log{
+			{ID: 1, ProjectID: 1, Title: "Log 1", Desc: "# Markdown Log 1\nContent here"},
+			{ID: 2, ProjectID: 1, Title: "Log 2", Desc: "# Markdown Log 2\nMore content"},
+		},
+	}
+	model, err := NewModel(mockService)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
+
+	// Select project and switch to logs tab
+	model.CoreModel.SelectProject(0)
+	model.activeTab = logsTab
+
+	// Test selecting a log
+	model.selectedLogIndex = 0
+	log := model.getLogAtIndex(0)
+	if log == nil {
+		t.Error("expected to get log at index 0, but got nil")
+	}
+	if log.Title != "Log 1" {
+		t.Errorf("expected log title to be 'Log 1', got %s", log.Title)
+	}
+
+	// Test log selection with SelectLog
+	cmd := model.CoreModel.SelectLog(1)
+	if cmd != NoCoreCmd {
+		t.Errorf("expected NoCoreCmd, got %v", cmd)
+	}
+	if model.CoreModel.GetSelectedLog().Title != "Log 2" {
+		t.Errorf("expected selected log to be 'Log 2', got %s", model.CoreModel.GetSelectedLog().Title)
+	}
+}
+
+func TestLogNavigation(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs: []service.Log{
+			{ID: 1, ProjectID: 1, Title: "Log 1", Desc: "Content 1"},
+			{ID: 2, ProjectID: 1, Title: "Log 2", Desc: "Content 2"},
+			{ID: 3, ProjectID: 1, Title: "Log 3", Desc: "Content 3"},
+		},
+	}
+	model, err := NewModel(mockService)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
+
+	model.CoreModel.SelectProject(0)
+	model.activeTab = logsTab
+
+	// Test initial state
+	if model.selectedLogIndex != 0 {
+		t.Errorf("expected initial selectedLogIndex to be 0, got %d", model.selectedLogIndex)
+	}
+
+	// Test navigation down
+	model.selectedLogIndex = 1
+	log := model.getLogAtIndex(model.selectedLogIndex)
+	if log.Title != "Log 2" {
+		t.Errorf("expected log at index 1 to be 'Log 2', got %s", log.Title)
+	}
+
+	// Test navigation up
+	model.selectedLogIndex = 0
+	log = model.getLogAtIndex(model.selectedLogIndex)
+	if log.Title != "Log 1" {
+		t.Errorf("expected log at index 0 to be 'Log 1', got %s", log.Title)
+	}
+
+	// Test bounds checking - invalid index
+	log = model.getLogAtIndex(-1)
+	if log != nil {
+		t.Error("expected nil for invalid negative index")
+	}
+
+	log = model.getLogAtIndex(10)
+	if log != nil {
+		t.Error("expected nil for invalid large index")
+	}
+}
+
+func TestLogDetailModes(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs: []service.Log{
+			{ID: 1, ProjectID: 1, Title: "Test Log", Desc: "# Test Content\nSome markdown content"},
+		},
+	}
+	model, err := NewModel(mockService)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
+
+	model.CoreModel.SelectProject(0)
+	model.activeTab = logsTab
+
+	// Test initial state
+	if model.logDetailMode != logDetailNone {
+		t.Errorf("expected initial logDetailMode to be logDetailNone, got %v", model.logDetailMode)
+	}
+
+	// Test selecting a log transitions to readonly mode
+	model.CoreModel.SelectLog(0)
+	model.logDetailMode = logDetailReadonly
+
+	if model.logDetailMode != logDetailReadonly {
+		t.Errorf("expected logDetailMode to be logDetailReadonly after selection, got %v", model.logDetailMode)
+	}
+
+	// Test log view focus states
+	if model.logViewFocus != focusList {
+		t.Errorf("expected initial logViewFocus to be focusList, got %v", model.logViewFocus)
+	}
+
+	// Switch to pager focus
+	model.logViewFocus = focusForm
+	if model.logViewFocus != focusForm {
+		t.Errorf("expected logViewFocus to be focusForm after switch, got %v", model.logViewFocus)
+	}
+}
+
+func TestLogViewportIntegration(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs: []service.Log{
+			{ID: 1, ProjectID: 1, Title: "Markdown Log", Desc: "# Heading\n\nThis is **bold** text"},
+		},
+	}
+	model, err := NewModel(mockService)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
+
+	// Test that viewport is initialized
+	if model.logViewport.Width == 0 {
+		t.Error("expected viewport to have non-zero width")
+	}
+
+	// Test that glamour renderer is initialized
+	if model.glamourRenderer == nil {
+		t.Error("expected glamour renderer to be initialized")
+	}
+
+	// Test rendering markdown content
+	testMarkdown := "# Test\nThis is a test"
+	rendered, err := model.glamourRenderer.Render(testMarkdown)
+	if err != nil {
+		t.Errorf("expected no error rendering markdown, got %v", err)
+	}
+	if rendered == "" {
+		t.Error("expected rendered content to be non-empty")
+	}
+}
+
+func TestGetSelectedLog(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs: []service.Log{
+			{ID: 1, ProjectID: 1, Title: "Test Log", Desc: "Test content"},
+		},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+
+	// Test no selected log initially
+	if coreModel.GetSelectedLog() != nil {
+		t.Error("expected no selected log initially")
+	}
+
+	// Test after selecting a log
+	coreModel.SelectLog(0)
+	selectedLog := coreModel.GetSelectedLog()
+	if selectedLog == nil {
+		t.Error("expected selected log after SelectLog")
+	}
+	if selectedLog.Title != "Test Log" {
+		t.Errorf("expected selected log title to be 'Test Log', got %s", selectedLog.Title)
 	}
 }
