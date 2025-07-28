@@ -202,8 +202,8 @@ var projectKeys = ProjectKeyMap{
 		key.WithHelp("c", "toggle completed"),
 	),
 	SwitchLogFocus: key.NewBinding(
-		key.WithKeys("ctrl+l", "ctrl+h"),
-		key.WithHelp("ctrl+l/ctrl+h", "switch log focus"),
+		key.WithKeys("tab"),
+		key.WithHelp("tab", "switch focus"),
 	),
 }
 
@@ -276,18 +276,21 @@ func NewModel(svc Service) (*Model, error) {
 	projectList.Title = "Addae"
 	projectList.SetShowHelp(true)
 
+	// Initialize viewport for log pager
+	const width = 78
+	vp := viewport.New(width, 20)
+	vp.YPosition = 0
+
+	const glamourGutter = 2
+	glamourRenderWidth := width - vp.Style.GetHorizontalFrameSize() - glamourGutter
 	// Initialize glamour renderer
 	renderer, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(70),
+		glamour.WithWordWrap(glamourRenderWidth),
 	)
 	if err != nil {
 		return nil, err
 	}
-
-	// Initialize viewport for log pager
-	vp := viewport.New(70, 20)
-	vp.YPosition = 0
 
 	return &Model{
 		CoreModel:         coreModel,
@@ -432,12 +435,9 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle log viewport navigation when in pager focus
 		if m.activeTab == logsTab && m.logDetailMode == logDetailReadonly && m.logViewFocus == focusForm {
-			switch msg.String() {
-			case "ctrl+h":
+			switch {
+			case key.Matches(msg, m.keys.SwitchLogFocus):
 				m.logViewFocus = focusList
-				return m, nil
-			case "":
-				// Stay in pager focus
 				return m, nil
 			default:
 				// Let viewport handle scrolling
@@ -681,7 +681,7 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 								m.logViewport.GotoTop()
 							}
 						}
-					case msg.String() == "ctrl+l":
+					case key.Matches(msg, m.keys.SwitchLogFocus):
 						m.logViewFocus = focusForm
 						return m, nil
 					}
@@ -1515,7 +1515,7 @@ func createLogForm() *huh.Form {
 				Title("Description (Optional)").
 				Key("desc").
 				Placeholder("Enter detailed description of log").
-                CharLimit(5000),
+				CharLimit(5000),
 		),
 	).WithTheme(theme)
 }
