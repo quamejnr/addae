@@ -294,7 +294,7 @@ func NewModel(svc Service) (*Model, error) {
 	glamourRenderWidth := width - vp.Style.GetHorizontalFrameSize() - glamourGutter
 	// Initialize glamour renderer
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStandardStyle("dracula"),
 		glamour.WithWordWrap(glamourRenderWidth),
 	)
 	if err != nil {
@@ -338,7 +338,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update viewport size
 		rightWidth := m.width/2 - 4
 		m.logViewport.Width = rightWidth
-		m.logViewport.Height = m.height - 8
+		m.logViewport.Height = m.height - 10
+
+		// Update glamour renderer width
+		const glamourGutter = 2
+		glamourRenderWidth := rightWidth - m.logViewport.Style.GetHorizontalFrameSize() - glamourGutter
+		m.glamourRenderer, _ = glamour.NewTermRenderer(
+			glamour.WithStandardStyle("dracula"),
+			glamour.WithWordWrap(glamourRenderWidth),
+		)
+
+		// Re-render log content if a log is selected
+		if m.activeTab == logsTab && m.logDetailMode == logDetailReadonly {
+			if log := m.CoreModel.GetSelectedLog(); log != nil {
+				rendered, err := m.glamourRenderer.Render(log.Desc)
+				if err != nil {
+					rendered = log.Desc // fallback to plain text
+				}
+				m.logViewport.SetContent(rendered)
+			}
+		}
 
 		// Update log edit form if active
 		if m.logEditForm != nil {
@@ -1805,7 +1824,7 @@ func newLogEditForm(width, height int) *LogEditForm {
 	ta.Placeholder = "Write your log content [markdown support]"
 	ta.SetWidth(width - 6)
 	ta.SetHeight(height - 10)
-    ta.CharLimit = 5000
+	ta.CharLimit = 5000
 	ta.ShowLineNumbers = false
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
 
