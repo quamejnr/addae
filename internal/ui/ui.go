@@ -288,6 +288,7 @@ func NewModel(svc Service) (*Model, error) {
 	// Initialize viewport for log pager
 	const width = 78
 	vp := viewport.New(width, 20)
+	vp.Style = lipgloss.NewStyle().Border(lipgloss.HiddenBorder())
 	vp.YPosition = 0
 
 	const glamourGutter = 2
@@ -340,9 +341,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logViewport.Width = rightWidth
 		m.logViewport.Height = m.height - 10
 
-		// Update glamour renderer width
+		// Update glamour renderer width based on the viewport's new content area
 		const glamourGutter = 2
-		glamourRenderWidth := rightWidth - m.logViewport.Style.GetHorizontalFrameSize() - glamourGutter
+		// The content area is the viewport's total width minus its own border/padding.
+		glamourRenderWidth := m.logViewport.Width - m.logViewport.Style.GetHorizontalFrameSize() - glamourGutter
 		m.glamourRenderer, _ = glamour.NewTermRenderer(
 			glamour.WithStandardStyle("dracula"),
 			glamour.WithWordWrap(glamourRenderWidth),
