@@ -476,6 +476,14 @@ func (m *Model) updateFullscreenLogEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch coreCmd {
 			case CoreRefreshProjectView:
 				m.loadProjectDetails(m.list.Index())
+				// Re-render log content after editing
+				if log := m.CoreModel.GetSelectedLog(); log != nil {
+					rendered, err := m.glamourRenderer.Render(log.Desc)
+					if err != nil {
+						rendered = log.Desc // fallback to plain text
+					}
+					m.logViewport.SetContent(rendered)
+				}
 				m.activeTab = logsTab
 			case CoreShowError:
 				// Handle error if needed
@@ -522,6 +530,13 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, m.keys.SwitchFocus):
 				m.logViewFocus = focusList
 				return m, nil
+			case key.Matches(msg, m.keys.ExitEdit):
+				if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
+					m.CoreModel.selectedLog = log
+					m.CoreModel.state = updateLogView
+					m.logEditForm = newLogEditFormWithData(m.width, m.height, log.Title, log.Desc)
+					return m, m.logEditForm.Init()
+				}
 			default:
 				// Let viewport handle scrolling
 				m.logViewport, cmd = m.logViewport.Update(msg)
