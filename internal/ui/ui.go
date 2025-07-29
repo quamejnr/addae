@@ -24,11 +24,13 @@ type Service interface {
 	CreateProject(*service.Project) error
 	UpdateProject(*service.Project) error
 	ListProjectTasks(projectID int) ([]service.Task, error)
-	ListProjectLogs(projectID int) ([]service.Log, error)
 	CreateTask(projectID int, title, desc string) error
 	UpdateTask(id int, title, desc string, completedAt *time.Time) error
-	CreateLog(projectID int, title, desc string) error
 	DeleteTask(id int) error
+	ListProjectLogs(projectID int) ([]service.Log, error)
+	CreateLog(projectID int, title, desc string) error
+	UpdateLog(id int, title, desc string) error
+	DeleteLog(id int) error
 }
 
 type viewState int
@@ -43,6 +45,8 @@ const (
 	createLogView
 	deleteTaskView
 	fullscreenLogEditView
+	updateLogView
+	deleteLogView
 )
 
 type detailTab int
@@ -118,7 +122,7 @@ type ProjectKeyMap struct {
 	ExitEdit        key.Binding
 	SwitchFocus     key.Binding
 	ToggleCompleted key.Binding
-	SwitchLogFocus  key.Binding
+	CreateObject    key.Binding
 }
 
 func (k ProjectKeyMap) ShortHelp() []key.Binding {
@@ -129,8 +133,8 @@ func (k ProjectKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.UpdateProject, k.CreateTask, k.CreateLog},
 		{k.GotoDetails, k.GotoTasks, k.GotoLogs, k.TabLeft, k.TabRight},
-		{k.Back, k.Help, k.SwitchFocus, k.SwitchLogFocus},
-		{k.ToggleDone, k.DeleteTask, k.SelectTask, k.CursorUp, k.CursorDown, k.ExitEdit},
+		{k.Back, k.Help, k.SwitchFocus},
+		{k.ToggleDone, k.DeleteTask, k.SelectTask, k.CursorUp, k.CursorDown, k.ExitEdit, k.CreateObject},
 	}
 }
 
@@ -195,6 +199,10 @@ var projectKeys = ProjectKeyMap{
 		key.WithKeys("e"),
 		key.WithHelp("e", "exit edit"),
 	),
+	CreateObject: key.NewBinding(
+		key.WithKeys("n"),
+		key.WithHelp("n", "create object"),
+	),
 	SwitchFocus: key.NewBinding(
 		key.WithKeys("tab"),
 		key.WithHelp("tab", "switch focus"),
@@ -202,10 +210,6 @@ var projectKeys = ProjectKeyMap{
 	ToggleCompleted: key.NewBinding(
 		key.WithKeys("c"),
 		key.WithHelp("c", "toggle completed"),
-	),
-	SwitchLogFocus: key.NewBinding(
-		key.WithKeys("tab"),
-		key.WithHelp("tab", "switch focus"),
 	),
 }
 
@@ -368,6 +372,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateFormView(msg, "deleteTask")
 	case fullscreenLogEditView:
 		return m.updateFullscreenLogEdit(msg)
+	case updateLogView:
+		return m.updateFullscreenLogEdit(msg)
+	case deleteLogView:
+		return m.updateFormView(msg, "deleteLog")
 	}
 
 	return m, cmd
@@ -424,6 +432,7 @@ func (m *Model) updateFullscreenLogEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.logEditForm.IsAborted() {
 		m.logEditForm = nil
 		m.CoreModel.GoToProjectView()
+		m.activeTab = logsTab
 		return m, nil
 	}
 
@@ -434,17 +443,25 @@ func (m *Model) updateFullscreenLogEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Title: title,
 				Desc:  desc,
 			}
-			coreCmd := m.CoreModel.CreateLog(data)
+			var coreCmd CoreCommand
+			if m.GetState() == updateLogView {
+				coreCmd = m.CoreModel.UpdateLog(data)
+			} else {
+				coreCmd = m.CoreModel.CreateLog(data)
+			}
+
 			m.logEditForm = nil
 
 			switch coreCmd {
 			case CoreRefreshProjectView:
 				m.loadProjectDetails(m.list.Index())
+				m.activeTab = logsTab
 			case CoreShowError:
 				// Handle error if needed
 			}
 		}
 		m.CoreModel.GoToProjectView()
+		m.activeTab = logsTab
 		return m, nil
 	}
 
@@ -481,7 +498,7 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle log viewport navigation when in pager focus
 		if m.activeTab == logsTab && m.logDetailMode == logDetailReadonly && m.logViewFocus == focusForm {
 			switch {
-			case key.Matches(msg, m.keys.SwitchLogFocus):
+			case key.Matches(msg, m.keys.SwitchFocus):
 				m.logViewFocus = focusList
 				return m, nil
 			default:
@@ -526,7 +543,7 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.CoreModel.state = fullscreenLogEditView
 				m.logEditForm = newLogEditForm(m.width, m.height)
 				return m, m.logEditForm.Init()
-			case msg.String() == "n" && m.activeTab == tasksTab:
+			case key.Matches(msg, m.keys.CreateObject) && m.activeTab == tasksTab:
 				m.quickInputActive = true
 				m.quickTaskInput.Focus()
 				return m, textinput.Blink
@@ -536,6 +553,14 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedTaskIndex = m.getMaxNavigableTaskIndex()
 				}
 				return m, nil
+			case key.Matches(msg, m.keys.CreateLog):
+				m.CoreModel.state = fullscreenLogEditView
+				m.logEditForm = newLogEditForm(m.width, m.height)
+				return m, m.logEditForm.Init()
+			case key.Matches(msg, m.keys.CreateObject) && m.activeTab == logsTab:
+				m.CoreModel.state = fullscreenLogEditView
+				m.logEditForm = newLogEditForm(m.width, m.height)
+				return m, m.logEditForm.Init()
 			case key.Matches(msg, m.keys.GotoDetails):
 				m.activeTab = projectDetailTab
 				m.taskDetailMode = taskDetailNone
@@ -726,9 +751,29 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 								m.logViewport.GotoTop()
 							}
 						}
-					case key.Matches(msg, m.keys.SwitchLogFocus):
+					case key.Matches(msg, m.keys.SwitchFocus):
 						m.logViewFocus = focusForm
 						return m, nil
+
+					case key.Matches(msg, m.keys.CreateObject):
+						m.CoreModel.state = fullscreenLogEditView
+						m.logEditForm = newLogEditForm(m.width, m.height)
+						return m, m.logEditForm.Init()
+
+					case key.Matches(msg, m.keys.ExitEdit):
+						if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
+							m.CoreModel.selectedLog = log
+							m.CoreModel.state = updateLogView
+							m.logEditForm = newLogEditFormWithData(m.width, m.height, log.Title, log.Desc)
+							return m, m.logEditForm.Init()
+						}
+					case key.Matches(msg, m.keys.DeleteTask):
+						if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
+							m.CoreModel.selectedLog = log
+							m.CoreModel.GoToDeleteLogView()
+							m.form = confirmDeleteLogForm()
+							return m, m.form.Init()
+						}
 					}
 				}
 			}
@@ -821,13 +866,31 @@ func (m *Model) updateLogsList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selectedLogIndex < len(logs)-1 {
 				m.selectedLogIndex++
 			}
-		case key.Matches(msg, m.keys.SelectTask): // Reuse enter key
+		case key.Matches(msg, m.keys.SelectTask):
 			if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
 				m.CoreModel.selectedLog = log
 				m.logDetailMode = logDetailReadonly
 				m.logViewFocus = focusList
 			}
 			return m, nil
+		case key.Matches(msg, m.keys.ExitEdit):
+			if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
+				m.CoreModel.selectedLog = log
+				m.CoreModel.state = updateLogView
+				m.logEditForm = newLogEditFormWithData(m.width, m.height, log.Title, log.Desc)
+				return m, m.logEditForm.Init()
+			}
+		case key.Matches(msg, m.keys.DeleteTask):
+			if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
+				m.CoreModel.selectedLog = log
+				m.CoreModel.GoToDeleteLogView()
+				m.form = confirmDeleteLogForm()
+				return m, m.form.Init()
+			}
+		case key.Matches(msg, m.keys.CreateObject):
+			m.CoreModel.state = fullscreenLogEditView
+			m.logEditForm = newLogEditForm(m.width, m.height)
+			return m, m.logEditForm.Init()
 		case key.Matches(msg, m.keys.Back):
 			m.CoreModel.GoToListView()
 		case key.Matches(msg, m.keys.Help):
@@ -879,6 +942,9 @@ func (m *Model) handleFormAbort(formType string) {
 	case "createTask", "createLog", "deleteTask":
 		m.CoreModel.GoToProjectView()
 		m.activeTab = tasksTab
+	case "deleteLog":
+		m.CoreModel.GoToProjectView()
+		m.activeTab = logsTab
 	}
 }
 
@@ -928,7 +994,23 @@ func (m *Model) handleFormCompletion(formType string) CoreCommand {
 		m.CoreModel.GoToProjectView()
 		m.activeTab = tasksTab
 		return CoreRefreshProjectView
+	case "deleteLog":
+		confirmed := m.form.GetBool("confirm")
+		if confirmed {
+			if log := m.CoreModel.GetSelectedLog(); log != nil {
+				cmd := m.CoreModel.ConfirmDeleteSelectedLog(true)
+				if cmd == CoreShowError {
+					return CoreShowError
+				}
+				m.activeTab = logsTab
+				return CoreRefreshProjectView
+			}
+		}
+		m.CoreModel.GoToProjectView()
+		m.activeTab = logsTab
+		return NoCoreCmd
 	}
+
 	return NoCoreCmd
 }
 
@@ -1447,6 +1529,13 @@ func (m *Model) getLogAtIndex(index int) *service.Log {
 	return nil
 }
 
+func newLogEditFormWithData(width, height int, title, desc string) *LogEditForm {
+	form := newLogEditForm(width, height)
+	form.titleInput.SetValue(title)
+	form.textarea.SetValue(desc)
+	return form
+}
+
 var theme *huh.Theme = huh.ThemeDracula()
 
 func confirmDeleteForm() *huh.Form {
@@ -1464,6 +1553,16 @@ func confirmDeleteTaskForm() *huh.Form {
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Are you sure you want to delete this task?").
+				Key("confirm"),
+		),
+	).WithTheme(theme)
+}
+
+func confirmDeleteLogForm() *huh.Form {
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Are you sure you want to delete this log?").
 				Key("confirm"),
 		),
 	).WithTheme(theme)

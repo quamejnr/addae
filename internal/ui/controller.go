@@ -197,6 +197,22 @@ func (m *CoreModel) GoToCreateLogView() CoreCommand {
 	return NoCoreCmd
 }
 
+// GoToUpdateLogView switches to update log view
+func (m *CoreModel) GoToUpdateLogView() CoreCommand {
+	if m.selectedLog == nil {
+		m.err = errors.New("no log selected")
+		return CoreShowError
+	}
+	m.state = updateLogView
+	return NoCoreCmd
+}
+
+// GoToDeleteLogView switches to delete log view
+func (m *CoreModel) GoToDeleteLogView() CoreCommand {
+	m.state = deleteLogView
+	return NoCoreCmd
+}
+
 // CreateProject creates a new project
 func (m *CoreModel) CreateProject(data ProjectFormData) CoreCommand {
 	p := service.Project{
@@ -265,6 +281,88 @@ func (m *CoreModel) CreateLog(data LogFormData) CoreCommand {
 		m.err = err
 		return CoreShowError
 	}
+
+	m.state = projectView
+	return CoreRefreshProjectView
+}
+
+// UpdateLog updates the selected log
+func (m *CoreModel) UpdateLog(data LogFormData) CoreCommand {
+	if m.selectedLog == nil {
+		m.err = errors.New("no log selected")
+		return CoreShowError
+	}
+
+	if err := m.service.UpdateLog(m.selectedLog.ID, data.Title, data.Desc); err != nil {
+		m.err = err
+		return CoreShowError
+	}
+
+	// Update the log in memory
+	m.selectedLog.Title = data.Title
+	m.selectedLog.Desc = data.Desc
+
+	// Update the log in the logs slice
+	for i, log := range m.logs {
+		if log.ID == m.selectedLog.ID {
+			m.logs[i] = *m.selectedLog
+			break
+		}
+	}
+
+	m.state = projectView
+	return CoreRefreshProjectView
+}
+
+// DeleteLog deletes a log by its ID
+func (m *CoreModel) DeleteLog(logID int) CoreCommand {
+	if err := m.service.DeleteLog(logID); err != nil {
+		m.err = err
+		return CoreShowError
+	}
+
+	// Clear selected log since it's been deleted
+	m.selectedLog = nil
+
+	// Refresh logs for the current project
+	logs, err := m.service.ListProjectLogs(m.selectedProject.ID)
+	if err != nil {
+		m.err = err
+		return CoreShowError
+	}
+	m.logs = logs
+
+	m.state = projectView
+	return CoreRefreshProjectView
+}
+
+// ConfirmDeleteSelectedLog deletes the selected log if confirmed
+func (m *CoreModel) ConfirmDeleteSelectedLog(confirmed bool) CoreCommand {
+	if !confirmed {
+		m.state = projectView
+		return NoCoreCmd
+	}
+
+	if m.selectedLog == nil {
+		m.err = errors.New("no log selected")
+		return CoreShowError
+	}
+
+	if err := m.service.DeleteLog(m.selectedLog.ID); err != nil {
+		m.err = err
+		return CoreShowError
+	}
+
+	// Clear selected log since it's been deleted
+	m.selectedLog = nil
+
+	// Refresh logs for the current project
+	logs, err := m.service.ListProjectLogs(m.selectedProject.ID)
+	if err != nil {
+		m.err = err
+		return CoreShowError
+	}
+	m.logs = logs
 
 	m.state = projectView
 	return CoreRefreshProjectView

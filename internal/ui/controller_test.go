@@ -129,6 +129,33 @@ func (m *MockService) CreateLog(projectID int, title, desc string) error {
 	return nil
 }
 
+func (m *MockService) UpdateLog(id int, title, desc string) error {
+	if m.err != nil {
+		return m.err
+	}
+	for i, l := range m.logs {
+		if l.ID == id {
+			m.logs[i].Title = title
+			m.logs[i].Desc = desc
+			return nil
+		}
+	}
+	return errors.New("log not found")
+}
+
+func (m *MockService) DeleteLog(id int) error {
+	if m.err != nil {
+		return m.err
+	}
+	for i, l := range m.logs {
+		if l.ID == id {
+			m.logs = append(m.logs[:i], m.logs[i+1:]...)
+			return nil
+		}
+	}
+	return errors.New("log not found")
+}
+
 func TestNewCoreModel(t *testing.T) {
 	mockService := &MockService{
 		projects: []service.Project{{ID: 1, Name: "Test Project"}},
@@ -334,6 +361,196 @@ func TestCreateLog(t *testing.T) {
 	}
 }
 
+func TestUpdateLog(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs:     []service.Log{{ID: 1, ProjectID: 1, Title: "Original Log", Desc: "Original Description"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+	coreModel.SelectLog(0)
+
+	formData := LogFormData{
+		Title: "Updated Log",
+		Desc:  "Updated Description",
+	}
+	cmd := coreModel.UpdateLog(formData)
+
+	if cmd != CoreRefreshProjectView {
+		t.Errorf("expected CoreRefreshProjectView, got %v", cmd)
+	}
+	if coreModel.GetState() != projectView {
+		t.Errorf("expected state to be projectView, got %v", coreModel.GetState())
+	}
+	if mockService.logs[0].Title != "Updated Log" {
+		t.Errorf("expected log title to be 'Updated Log', got %s", mockService.logs[0].Title)
+	}
+	if mockService.logs[0].Desc != "Updated Description" {
+		t.Errorf("expected log desc to be 'Updated Description', got %s", mockService.logs[0].Desc)
+	}
+	if coreModel.GetSelectedLog().Title != "Updated Log" {
+		t.Errorf("expected selected log title to be 'Updated Log', got %s", coreModel.GetSelectedLog().Title)
+	}
+}
+
+func TestUpdateLogNoSelectedLog(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+
+	formData := LogFormData{
+		Title: "Updated Log",
+		Desc:  "Updated Description",
+	}
+	cmd := coreModel.UpdateLog(formData)
+
+	if cmd != CoreShowError {
+		t.Errorf("expected CoreShowError when no log selected, got %v", cmd)
+	}
+	if coreModel.GetError() == nil {
+		t.Error("expected error when no log selected")
+	}
+}
+
+func TestDeleteLog(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs:     []service.Log{{ID: 1, ProjectID: 1, Title: "Log to Delete", Desc: "Description"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+	coreModel.SelectLog(0)
+
+	cmd := coreModel.DeleteLog(1)
+
+	if cmd != CoreRefreshProjectView {
+		t.Errorf("expected CoreRefreshProjectView, got %v", cmd)
+	}
+	if coreModel.GetState() != projectView {
+		t.Errorf("expected state to be projectView, got %v", coreModel.GetState())
+	}
+	if len(mockService.logs) != 0 {
+		t.Errorf("expected 0 logs in mock service after delete, got %d", len(mockService.logs))
+	}
+	if coreModel.GetSelectedLog() != nil {
+		t.Error("expected selected log to be nil after delete")
+	}
+}
+
+func TestConfirmDeleteSelectedLog(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs:     []service.Log{{ID: 1, ProjectID: 1, Title: "Log to Delete", Desc: "Description"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+	coreModel.SelectLog(0)
+
+	// Test confirmed deletion
+	cmd := coreModel.ConfirmDeleteSelectedLog(true)
+	if cmd != CoreRefreshProjectView {
+		t.Errorf("expected CoreRefreshProjectView when confirmed, got %v", cmd)
+	}
+	if len(mockService.logs) != 0 {
+		t.Errorf("expected 0 logs in mock service after confirmed delete, got %d", len(mockService.logs))
+	}
+	if coreModel.GetSelectedLog() != nil {
+		t.Error("expected selected log to be nil after confirmed delete")
+	}
+}
+
+func TestConfirmDeleteSelectedLogNotConfirmed(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs:     []service.Log{{ID: 1, ProjectID: 1, Title: "Log to Delete", Desc: "Description"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+	coreModel.SelectLog(0)
+
+	// Test not confirmed deletion
+	cmd := coreModel.ConfirmDeleteSelectedLog(false)
+	if cmd != NoCoreCmd {
+		t.Errorf("expected NoCoreCmd when not confirmed, got %v", cmd)
+	}
+	if coreModel.GetState() != projectView {
+		t.Errorf("expected state to be projectView when not confirmed, got %v", coreModel.GetState())
+	}
+	if len(mockService.logs) != 1 {
+		t.Errorf("expected 1 log in mock service when not confirmed, got %d", len(mockService.logs))
+	}
+}
+
+func TestConfirmDeleteSelectedLogNoSelectedLog(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+
+	cmd := coreModel.ConfirmDeleteSelectedLog(true)
+	if cmd != CoreShowError {
+		t.Errorf("expected CoreShowError when no log selected, got %v", cmd)
+	}
+	if coreModel.GetError() == nil {
+		t.Error("expected error when no log selected")
+	}
+}
+
+func TestGoToUpdateLogView(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs:     []service.Log{{ID: 1, ProjectID: 1, Title: "Test Log", Desc: "Description"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+	coreModel.SelectLog(0)
+
+	cmd := coreModel.GoToUpdateLogView()
+	if cmd != NoCoreCmd {
+		t.Errorf("expected NoCoreCmd, got %v", cmd)
+	}
+	if coreModel.GetState() != updateLogView {
+		t.Errorf("expected state to be updateLogView, got %v", coreModel.GetState())
+	}
+}
+
+func TestGoToUpdateLogViewNoSelectedLog(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+
+	cmd := coreModel.GoToUpdateLogView()
+	if cmd != CoreShowError {
+		t.Errorf("expected CoreShowError when no log selected, got %v", cmd)
+	}
+	if coreModel.GetError() == nil {
+		t.Error("expected error when no log selected")
+	}
+}
+
+func TestGoToDeleteLogView(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs:     []service.Log{{ID: 1, ProjectID: 1, Title: "Test Log", Desc: "Description"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+	coreModel.SelectLog(0)
+
+	cmd := coreModel.GoToDeleteLogView()
+	if cmd != NoCoreCmd {
+		t.Errorf("expected NoCoreCmd, got %v", cmd)
+	}
+	if coreModel.GetState() != deleteLogView {
+		t.Errorf("expected state to be deleteLogView, got %v", coreModel.GetState())
+	}
+}
+
 func TestSelectTask(t *testing.T) {
 	mockService := &MockService{
 		projects: []service.Project{{ID: 1, Name: "Test Project"}},
@@ -446,6 +663,23 @@ func TestHandleFormAbort(t *testing.T) {
 	model.handleFormAbort("createLog")
 	if model.GetState() != projectView {
 		t.Errorf("expected state to be projectView after aborting createLog, got %v", model.GetState())
+	}
+
+	// Test aborting from deleteLog view
+	mockServiceDeleteLog := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs:     []service.Log{{ID: 1, ProjectID: 1, Title: "Test Log", Desc: "Description"}},
+	}
+	model, _ = NewModel(mockServiceDeleteLog)
+	model.CoreModel.SelectProject(0)
+	model.CoreModel.SelectLog(0)
+	model.CoreModel.GoToDeleteLogView()
+	model.handleFormAbort("deleteLog")
+	if model.GetState() != projectView {
+		t.Errorf("expected state to be projectView after aborting deleteLog, got %v", model.GetState())
+	}
+	if model.activeTab != logsTab {
+		t.Errorf("expected activeTab to be logsTab after aborting deleteLog, got %v", model.activeTab)
 	}
 }
 
@@ -684,5 +918,126 @@ func TestGetSelectedLog(t *testing.T) {
 	}
 	if selectedLog.Title != "Test Log" {
 		t.Errorf("expected selected log title to be 'Test Log', got %s", selectedLog.Title)
+	}
+}
+
+func TestLogUpdateAndDeleteIntegration(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs: []service.Log{
+			{ID: 1, ProjectID: 1, Title: "Original Log", Desc: "Original content"},
+			{ID: 2, ProjectID: 1, Title: "Another Log", Desc: "Another content"},
+		},
+	}
+	model, err := NewModel(mockService)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
+
+	// Setup: select project and log
+	model.CoreModel.SelectProject(0)
+	model.activeTab = logsTab
+	model.CoreModel.SelectLog(0)
+
+	// Test update log workflow
+	formData := LogFormData{
+		Title: "Updated Log Title",
+		Desc:  "Updated log description",
+	}
+	cmd := model.CoreModel.UpdateLog(formData)
+	if cmd != CoreRefreshProjectView {
+		t.Errorf("expected CoreRefreshProjectView after update, got %v", cmd)
+	}
+
+	// Verify the log was updated in memory
+	if model.CoreModel.GetSelectedLog().Title != "Updated Log Title" {
+		t.Errorf("expected selected log title to be updated, got %s", model.CoreModel.GetSelectedLog().Title)
+	}
+	if model.CoreModel.GetSelectedLog().Desc != "Updated log description" {
+		t.Errorf("expected selected log desc to be updated, got %s", model.CoreModel.GetSelectedLog().Desc)
+	}
+
+	// Test delete log workflow
+	originalLogCount := len(model.CoreModel.GetLogs())
+	cmd = model.CoreModel.ConfirmDeleteSelectedLog(true)
+	if cmd != CoreRefreshProjectView {
+		t.Errorf("expected CoreRefreshProjectView after delete, got %v", cmd)
+	}
+
+	// Verify the log was deleted
+	if len(mockService.logs) != originalLogCount-1 {
+		t.Errorf("expected log count to decrease by 1, got %d logs", len(mockService.logs))
+	}
+	if model.CoreModel.GetSelectedLog() != nil {
+		t.Error("expected selected log to be nil after delete")
+	}
+}
+
+func TestLogServiceErrorHandling(t *testing.T) {
+	// Test UpdateLog service error
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs:     []service.Log{{ID: 1, ProjectID: 1, Title: "Test Log", Desc: "Description"}},
+	}
+	model, err := NewModel(mockService)
+	if err != nil {
+		t.Fatalf("Failed to create model: %v", err)
+	}
+    // add errors
+	mockService.err = errors.New("service error")
+
+	coreModel := model.CoreModel
+	coreModel.SelectProject(0)
+	model.activeTab = logsTab
+	coreModel.SelectLog(0)
+
+	formData := LogFormData{Title: "Updated", Desc: "Updated"}
+	cmd := coreModel.UpdateLog(formData)
+	if cmd != CoreShowError {
+		t.Errorf("expected CoreShowError on service error, got %v", cmd)
+	}
+	if coreModel.GetError() == nil {
+		t.Error("expected error to be set on service failure")
+	}
+
+	// Test DeleteLog service error
+	mockService.err = errors.New("delete error")
+	cmd = coreModel.DeleteLog(1)
+	if cmd != CoreShowError {
+		t.Errorf("expected CoreShowError on delete service error, got %v", cmd)
+	}
+}
+
+func TestLogStateTransitions(t *testing.T) {
+	mockService := &MockService{
+		projects: []service.Project{{ID: 1, Name: "Test Project"}},
+		logs:     []service.Log{{ID: 1, ProjectID: 1, Title: "Test Log", Desc: "Description"}},
+	}
+	coreModel, _ := NewCoreModel(mockService)
+	coreModel.SelectProject(0)
+	coreModel.SelectLog(0)
+
+	// Test transition to update log view
+	cmd := coreModel.GoToUpdateLogView()
+	if cmd != NoCoreCmd {
+		t.Errorf("expected NoCoreCmd for valid transition, got %v", cmd)
+	}
+	if coreModel.GetState() != updateLogView {
+		t.Errorf("expected state to be updateLogView, got %v", coreModel.GetState())
+	}
+
+	// Test transition to delete log view
+	cmd = coreModel.GoToDeleteLogView()
+	if cmd != NoCoreCmd {
+		t.Errorf("expected NoCoreCmd for valid transition, got %v", cmd)
+	}
+	if coreModel.GetState() != deleteLogView {
+		t.Errorf("expected state to be deleteLogView, got %v", coreModel.GetState())
+	}
+
+	// Test return to project view after operations
+	coreModel.UpdateLog(LogFormData{Title: "Updated", Desc: "Updated"})
+	if coreModel.GetState() != projectView {
+		t.Errorf("expected state to return to projectView after update, got %v", coreModel.GetState())
 	}
 }
