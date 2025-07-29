@@ -1066,11 +1066,11 @@ func (m Model) View() string {
 		mainContent = m.renderTabularView()
 	case projectView:
 		mainContent = m.renderDetailPanel()
-	case fullscreenLogEditView:
+	case fullscreenLogEditView, updateLogView:
 		if m.logEditForm != nil {
 			mainContent = m.logEditForm.View()
 		}
-	case updateView, createView, deleteView, createTaskView, createLogView, deleteTaskView:
+	case updateView, createView, deleteView, createTaskView, createLogView, deleteTaskView, deleteLogView:
 		mainContent = m.form.View()
 	}
 
@@ -1805,6 +1805,7 @@ func newLogEditForm(width, height int) *LogEditForm {
 	ta.Placeholder = "Write your log content [markdown support]"
 	ta.SetWidth(width - 6)
 	ta.SetHeight(height - 10)
+    ta.CharLimit = 5000
 	ta.ShowLineNumbers = false
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
 
