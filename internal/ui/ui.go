@@ -1423,7 +1423,7 @@ func (m *Model) renderProjectDetails() string {
 
 	s.WriteString(detailTitleStyle.Render(project.Name))
 	s.WriteString("\n")
-	s.WriteString(projectDetailStyle.Render("Status: ") + detailItemStyle.Render(project.Status))
+	s.WriteString(getStatusIndicator(project.Status))
 	if project.Summary != "" {
 		s.WriteString("\n\n")
 		s.WriteString(projectDetailStyle.Render("Summary: ") + detailItemStyle.Render(project.Summary))
@@ -1573,6 +1573,31 @@ func (m *Model) getLogAtIndex(index int) *service.Log {
 		return &logs[index]
 	}
 	return nil
+}
+
+func getStatusIndicator(status string) string {
+	switch strings.ToLower(status) {
+	case "todo":
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("167")).
+			Render("░░░ TODO")
+	case "in progress":
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("214")).
+			Render("▓░░ IN PROGRESS")
+	case "completed":
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("71")).
+			Render("▓▓▓ COMPLETED")
+	case "archived":
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Render("▓▓▓ ARCHIVED")
+	default:
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Render("▓▓▓ ARCHIVED")
+	}
 }
 
 func newLogEditFormWithData(width, height int, title, desc string) *LogEditForm {
