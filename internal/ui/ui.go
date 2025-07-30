@@ -1116,19 +1116,17 @@ func (m Model) View() string {
 func (m *Model) renderTabularView() string {
 	leftWidth := m.width/2 - 4
 	rightWidth := m.width/2 - 4
-	panelHeight := m.height - 4
 
 	leftColumn := leftColumnStyle.
 		Width(leftWidth).
-		Height(panelHeight).
+		MarginTop(1).
 		Render(m.list.View())
 
 	rightColumn := rightColumnStyle.
 		Width(rightWidth).
-		Height(panelHeight).
 		Render(m.renderDetailPanel())
 
-	return appStyle.Render(
+	return lipgloss.NewStyle().Render(
 		lipgloss.JoinHorizontal(lipgloss.Top, leftColumn, rightColumn),
 	)
 }
@@ -1141,31 +1139,19 @@ func (m *Model) renderDetailPanel() string {
 
 	// Handle tasks split view
 	if m.activeTab == tasksTab && m.taskDetailMode != taskDetailNone {
-		var s strings.Builder
-		s.WriteString(m.renderTabs())
-		s.WriteString("\n")
-		s.WriteString(m.renderTasksSplitView())
-		s.WriteString("\n")
-		s.WriteString(m.help.View(m.keys))
-		return s.String()
+		return lipgloss.JoinVertical(
+			lipgloss.Left, m.renderTabs(), m.renderTasksSplitView(), m.help.View(m.keys),
+		)
 	}
 
 	// Handle logs split view
 	if m.activeTab == logsTab && m.logDetailMode != logDetailNone {
-		var s strings.Builder
-		s.WriteString(m.renderTabs())
-		s.WriteString("\n")
-		s.WriteString(m.renderLogsSplitView())
-		s.WriteString("\n")
-		s.WriteString(m.help.View(m.keys))
-		return s.String()
+		return lipgloss.JoinVertical(
+			lipgloss.Left, m.renderTabs(), m.renderLogsSplitView(), m.help.View(m.keys),
+		)
 	}
 
 	// Handle all other views normally
-	var s strings.Builder
-	s.WriteString(m.renderTabs())
-	s.WriteString("\n")
-
 	var content string
 	switch m.activeTab {
 	case projectDetailTab:
@@ -1176,11 +1162,25 @@ func (m *Model) renderDetailPanel() string {
 		content = m.renderLogsListOnly()
 	}
 
-	// Ensure content takes up the available space consistently
-    s.WriteString(content)
-	s.WriteString("\n")
-	s.WriteString(m.help.View(m.keys))
-	return s.String()
+	// This section calculates the space being taken by the tabs
+	// to ensure content takes up the available space.
+	// We grab the screen height and deduct 4 to offset the margin we use
+	// in appstyle rendering in tabularview.
+	// We then deduct the height our tabs and help content will take to ensure the content
+	// renders in the available space.
+	// Without this the help section comes right under the content instead of the footer.
+	//
+	availHeight := m.height - 4
+	tabs := lipgloss.NewStyle().Render(m.renderTabs())
+	tabsHeight := lipgloss.Height(tabs)
+	availHeight -= tabsHeight
+	helpView := m.help.View(m.keys)
+	helpHeight := lipgloss.Height(helpView)
+	availHeight -= helpHeight
+
+	content = lipgloss.NewStyle().Height(availHeight).Render(content)
+
+	return lipgloss.JoinVertical(lipgloss.Left, tabs, content, helpView)
 }
 
 func (m *Model) renderLogsSplitView() string {
@@ -1244,7 +1244,6 @@ func (m *Model) renderLogDetailPanel() string {
 
 	var s strings.Builder
 	s.WriteString(detailTitleStyle.PaddingLeft(2).Render(log.Title))
-	// s.WriteString("\n\n")
 
 	// Show the viewport content
 	s.WriteString(m.logViewport.View())
@@ -1255,7 +1254,7 @@ func (m *Model) renderLogDetailPanel() string {
 func (m *Model) renderTasksSplitView() string {
 	leftWidth := m.width/2 - 4
 	rightWidth := m.width/2 - 4
-    splitHeight := m.height - 8
+	splitHeight := m.height - 8
 
 	var taskListContent strings.Builder
 
@@ -1383,7 +1382,7 @@ func (m *Model) renderTabs() string {
 		Border(lipgloss.NormalBorder(), true).
 		BorderForeground(lipgloss.Color("240")).
 		Padding(0, 1).
-		MarginBottom(1)
+		Margin(1, 0, 1)
 
 	activeTabStyle := tabStyle.
 		BorderForeground(lipgloss.Color("69")).
@@ -1412,15 +1411,15 @@ func (m *Model) renderProjectDetails() string {
 	s.WriteString(detailTitleStyle.Render(project.Name))
 	s.WriteString("\n")
 	s.WriteString(projectDetailStyle.Render("Status: ") + detailItemStyle.Render(project.Status))
-	s.WriteString("\n\n")
 	if project.Summary != "" {
-		s.WriteString(projectDetailStyle.Render("Summary: ") + detailItemStyle.Render(project.Summary))
 		s.WriteString("\n\n")
+		s.WriteString(projectDetailStyle.Render("Summary: ") + detailItemStyle.Render(project.Summary))
 	}
 	if project.Desc != "" {
+		s.WriteString("\n\n")
 		s.WriteString(projectDetailStyle.Render("Description: ") + detailItemStyle.Render(project.Desc))
-		s.WriteString("\n")
 	}
+	s.WriteString("\n")
 	return s.String()
 }
 
