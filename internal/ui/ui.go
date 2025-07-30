@@ -184,8 +184,8 @@ var projectKeys = ProjectKeyMap{
 		key.WithHelp("←/ctrl+h", "previous tab"),
 	),
 	TabRight: key.NewBinding(
-		key.WithKeys("right", "ctrl+l", "tab"),
-		key.WithHelp("→/ctrl+l/tab", "next tab"),
+		key.WithKeys("right", "ctrl+l"),
+		key.WithHelp("→/ctrl+l", "next tab"),
 	),
 	Back: key.NewBinding(
 		key.WithKeys("esc", "b", "ctrl+c"),
