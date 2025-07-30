@@ -924,7 +924,7 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case key.Matches(msg, m.keys.DeleteObject):
 			if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
-                m.CoreModel.selectedTask = task
+				m.CoreModel.selectedTask = task
 				m.deleteDialogType = taskDeleteDialog
 				m.deleteConfirmCursor = 0 // Default to Cancel
 				m.deleteAction = func() CoreCommand {
@@ -990,7 +990,7 @@ func (m *Model) updateLogsList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case key.Matches(msg, m.keys.DeleteObject):
 			if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
-                m.CoreModel.selectedLog = log
+				m.CoreModel.selectedLog = log
 				m.deleteDialogType = logDeleteDialog
 				m.deleteConfirmCursor = 0
 				m.deleteAction = func() CoreCommand {
@@ -1283,10 +1283,6 @@ func (m *Model) renderConfirmationDialog(question string, subtext string) string
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#874BFD")).
 		Padding(1, 2)
-
-	// Text styling
-	// question := lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("Delete %s", styledName)) + "?"
-	// subtext := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("This will delete all tasks and logs. This action cannot be undone.")
 
 	// Button styling
 	cancelButton := "[ Cancel ]"
@@ -1859,51 +1855,6 @@ func createProjectForm() *huh.Form {
 	).WithTheme(theme)
 }
 
-func createTaskForm() *huh.Form {
-	return huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Title").
-				Key("title").
-				Placeholder("Enter title of task"),
-			huh.NewText().
-				Title("Description (Optional)").
-				Key("desc").
-				Placeholder("Enter detailed description of task"),
-		),
-	).WithTheme(theme)
-}
-
-func createLogForm() *huh.Form {
-	return huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Title").
-				Key("title").
-				Placeholder("Enter title of log"),
-			huh.NewText().
-				Title("Description (Optional)").
-				Key("desc").
-				Placeholder("Enter detailed description of log").
-				CharLimit(5000),
-		),
-	).WithTheme(theme)
-}
-
-func updateTaskForm(t service.Task) *huh.Form {
-	return huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Title").
-				Key("title").
-				Value(&t.Title),
-			huh.NewText().
-				Title("Description").
-				Key("desc").
-				Value(&t.Desc),
-		),
-	).WithTheme(theme)
-}
 
 type TaskEditForm struct {
 	titleInput textinput.Model
