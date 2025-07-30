@@ -1101,6 +1101,12 @@ func (m *Model) loadProjectDetails(index int) {
 	if logs, err := m.CoreModel.service.ListProjectLogs(project.ID); err == nil {
 		m.CoreModel.logs = logs
 	}
+
+	// Reset cursor positions for tasks and logs to prevent out-of-bounds errors
+    // when I leave a project and move to another the selectedindex still persist
+    // This can lead to cursor being out of position for some tasks and logs
+	m.selectedTaskIndex = 0
+	m.selectedLogIndex = 0
 }
 
 func (m Model) View() string {
