@@ -1177,8 +1177,6 @@ func (m *Model) renderDetailPanel() string {
 	}
 
 	// Ensure content takes up the available space consistently
-	// contentStyle := lipgloss.NewStyle().Height(contentHeight - 2) // -2 for tab spacing
-	// s.WriteString(contentStyle.Render(content))
     s.WriteString(content)
 	s.WriteString("\n")
 	s.WriteString(m.help.View(m.keys))
@@ -1188,7 +1186,7 @@ func (m *Model) renderDetailPanel() string {
 func (m *Model) renderLogsSplitView() string {
 	leftWidth := m.width/2 - 4
 	rightWidth := m.width/2 - 4
-	splitHeight := m.height - 2
+	splitHeight := m.height - 8
 
 	var logListContent strings.Builder
 
@@ -1257,7 +1255,6 @@ func (m *Model) renderLogDetailPanel() string {
 func (m *Model) renderTasksSplitView() string {
 	leftWidth := m.width/2 - 4
 	rightWidth := m.width/2 - 4
-	// splitHeight := totalHeight - 2 // -2 for spacing
     splitHeight := m.height - 8
 
 	var taskListContent strings.Builder
