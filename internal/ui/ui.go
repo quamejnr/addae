@@ -1219,9 +1219,16 @@ func (m *Model) renderConfirmDeleteDialog(underlyingContent string) string {
 		BorderForeground(lipgloss.Color("#874BFD")).
 		Padding(1, 2)
 
-	// Text styling
-	question := lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("Delete '%s'?", m.itemToDeleteName))
-	subtext := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("This action cannot be undone.")
+	styledName := detailTitleStyle.Render(fmt.Sprintf("'%s'", m.itemToDeleteName))
+	questionParts := []string{
+		lipgloss.NewStyle().Bold(true).Render("Delete"),
+		" ",
+		styledName,
+		lipgloss.NewStyle().Bold(true).Render("?"),
+	}
+	question := lipgloss.JoinHorizontal(lipgloss.Left, questionParts...)
+
+	subtext := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("This will delete all tasks and logs. This action cannot be undone.")
 
 	// Button styling
 	cancelButton := "[ Cancel ]"
@@ -1245,8 +1252,10 @@ func (m *Model) renderConfirmDeleteDialog(underlyingContent string) string {
 
 	dialog := dialogBox.Render(ui)
 
-	// Overlay dialog on top of the underlying content
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog)
+	// Place the dialog in the center of the screen
+	centeredDialog := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog)
+
+	return lipgloss.JoinVertical(lipgloss.Left, underlyingContent, centeredDialog)
 }
 
 func (m *Model) renderTabularView() string {
