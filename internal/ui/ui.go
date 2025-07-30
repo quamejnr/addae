@@ -86,6 +86,12 @@ type Model struct {
 	logViewport       viewport.Model
 	glamourRenderer   *glamour.TermRenderer
 	logEditForm       *LogEditForm
+
+	// State for the custom delete confirmation dialog
+	deleteConfirmationVisible bool
+	deleteConfirmCursor       int // 0 = cancel, 1 = delete
+	itemToDeleteName          string
+	deleteAction              func() CoreCommand
 }
 
 type taskDetailMode int
@@ -342,6 +348,11 @@ func (m Model) Init() tea.Cmd {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
+	// Handle the delete confirmation dialog first if it's visible.
+	if m.deleteConfirmationVisible {
+		return m.updateConfirmDeleteDialog(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -441,10 +452,17 @@ func (m *Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.form = createProjectForm()
 				return m, m.form.Init()
 			case "d":
-				if selected := m.list.Index(); selected >= 0 {
-					m.CoreModel.GoToDeleteView()
-					m.form = confirmDeleteForm()
-					return m, m.form.Init()
+				if selectedIndex := m.list.Index(); selectedIndex >= 0 {
+					projects := m.CoreModel.GetProjects()
+					if selectedIndex < len(projects) {
+						project := projects[selectedIndex]
+						m.deleteConfirmationVisible = true
+						m.deleteConfirmCursor = 0 // Default to Cancel
+						m.itemToDeleteName = project.Name
+						m.deleteAction = func() CoreCommand {
+							return m.CoreModel.DeleteProject(selectedIndex)
+						}
+					}
 				}
 			case "u":
 				if selectedIndex := m.list.Index(); selectedIndex >= 0 {
@@ -1084,6 +1102,43 @@ func (m *Model) handleFormCompletion(formType string) CoreCommand {
 	return NoCoreCmd
 }
 
+func (m *Model) updateConfirmDeleteDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if !m.deleteConfirmationVisible {
+		return m, nil
+	}
+
+	if msg, ok := msg.(tea.KeyMsg); ok {
+		switch msg.String() {
+		case "q", "esc", "ctrl+c":
+			m.deleteConfirmationVisible = false
+			return m, nil
+
+		case "left", "h", "tab":
+			m.deleteConfirmCursor = (m.deleteConfirmCursor + 1) % 2
+
+		case "right", "l", "shift+tab":
+			m.deleteConfirmCursor = (m.deleteConfirmCursor + 1) % 2
+
+		case "enter":
+			m.deleteConfirmationVisible = false
+			if m.deleteConfirmCursor == 1 { // 1 is Delete
+				coreCmd := m.deleteAction()
+				switch coreCmd {
+				case CoreRefreshProjects:
+					if err := m.CoreModel.RefreshProjects(); err == nil {
+						m.refreshListItems()
+					}
+				case CoreRefreshProjectView:
+					m.loadProjectDetails(m.list.Index())
+				}
+			}
+			return m, nil
+		}
+	}
+
+	return m, nil
+}
+
 func (m *Model) refreshListItems() {
 	projects := m.CoreModel.GetProjects()
 	items := make([]list.Item, len(projects))
@@ -1150,7 +1205,48 @@ func (m Model) View() string {
 		mainContent = m.form.View()
 	}
 
+	if m.deleteConfirmationVisible {
+		return m.renderConfirmDeleteDialog(mainContent)
+	}
+
 	return mainContent
+}
+
+func (m *Model) renderConfirmDeleteDialog(underlyingContent string) string {
+	// Dialog styling
+	dialogBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#874BFD")).
+		Padding(1, 2)
+
+	// Text styling
+	question := lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("Delete '%s'?", m.itemToDeleteName))
+	subtext := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("This action cannot be undone.")
+
+	// Button styling
+	cancelButton := "[ Cancel ]"
+	deleteButton := "[ Delete ]"
+
+	if m.deleteConfirmCursor == 0 {
+		cancelButton = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true).Render(cancelButton)
+	} else {
+		deleteButton = lipgloss.NewStyle().Foreground(lipgloss.Color("197")).Bold(true).Render(deleteButton)
+	}
+
+	buttons := lipgloss.JoinHorizontal(lipgloss.Top, cancelButton, " ", deleteButton)
+
+	// Assemble dialog content
+	ui := lipgloss.JoinVertical(lipgloss.Center,
+		question,
+		subtext,
+		"",
+		buttons,
+	)
+
+	dialog := dialogBox.Render(ui)
+
+	// Overlay dialog on top of the underlying content
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog)
 }
 
 func (m *Model) renderTabularView() string {
