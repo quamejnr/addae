@@ -64,6 +64,15 @@ const (
 	focusForm
 )
 
+type dialogType int
+
+const (
+	noDialog dialogType = iota
+	projectDeleteDialog
+	taskDeleteDialog
+	logDeleteDialog
+)
+
 type Model struct {
 	*CoreModel
 	list              list.Model
@@ -88,10 +97,10 @@ type Model struct {
 	logEditForm       *LogEditForm
 
 	// State for the custom delete confirmation dialog
-	deleteConfirmationVisible bool
-	deleteConfirmCursor       int // 0 = cancel, 1 = delete
-	itemToDeleteName          string
-	deleteAction              func() CoreCommand
+
+	deleteConfirmCursor int // 0 = cancel, 1 = delete
+	deleteDialogType    dialogType
+	deleteAction        func() CoreCommand
 }
 
 type taskDetailMode int
@@ -349,7 +358,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	// Handle the delete confirmation dialog first if it's visible.
-	if m.deleteConfirmationVisible {
+	if m.deleteDialogType != noDialog {
 		return m.updateConfirmDeleteDialog(msg)
 	}
 
@@ -455,10 +464,8 @@ func (m *Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if selectedIndex := m.list.Index(); selectedIndex >= 0 {
 					projects := m.CoreModel.GetProjects()
 					if selectedIndex < len(projects) {
-						project := projects[selectedIndex]
-						m.deleteConfirmationVisible = true
+						m.deleteDialogType = projectDeleteDialog
 						m.deleteConfirmCursor = 0 // Default to Cancel
-						m.itemToDeleteName = project.Name
 						m.deleteAction = func() CoreCommand {
 							return m.CoreModel.DeleteProject(selectedIndex)
 						}
@@ -719,9 +726,14 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.CoreModel.selectedTask = task
 					}
 				case key.Matches(msg, m.keys.DeleteObject):
-					m.CoreModel.GoToDeleteTaskView()
-					m.form = confirmDeleteTaskForm()
-					return m, m.form.Init()
+					if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
+						m.deleteDialogType = taskDeleteDialog
+						m.deleteConfirmCursor = 0
+						m.deleteAction = func() CoreCommand {
+							return m.CoreModel.DeleteTask(task.ID)
+						}
+						return m, nil
+					}
 				case key.Matches(msg, m.keys.ToggleDone):
 					tasks := m.CoreModel.GetTasks()
 					if m.selectedTaskIndex >= 0 && m.selectedTaskIndex < len(tasks) {
@@ -857,10 +869,12 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					case key.Matches(msg, m.keys.DeleteObject):
 						if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
-							m.CoreModel.selectedLog = log
-							m.CoreModel.GoToDeleteLogView()
-							m.form = confirmDeleteLogForm()
-							return m, m.form.Init()
+							m.deleteDialogType = logDeleteDialog
+							m.deleteConfirmCursor = 0 // Default to Cancel
+							m.deleteAction = func() CoreCommand {
+								return m.CoreModel.DeleteLog(log.ID)
+							}
+							return m, nil
 						}
 					}
 				}
@@ -908,12 +922,22 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selectedTaskIndex > maxIndex {
 				m.selectedTaskIndex = maxIndex
 			}
+		case key.Matches(msg, m.keys.DeleteObject):
+			if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
+                m.CoreModel.selectedTask = task
+				m.deleteDialogType = taskDeleteDialog
+				m.deleteConfirmCursor = 0 // Default to Cancel
+				m.deleteAction = func() CoreCommand {
+					return m.CoreModel.DeleteTask(task.ID)
+				}
+			}
 		case key.Matches(msg, m.keys.SelectObject):
 			if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
 				m.CoreModel.selectedTask = task
 				m.taskDetailMode = taskDetailReadonly
 			}
 			return m, nil
+
 		case key.Matches(msg, m.keys.Edit):
 			if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
 				m.CoreModel.selectedTask = task
@@ -923,10 +947,6 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.taskEditForm = newTaskEditForm(*task)
 				return m, m.taskEditForm.Init()
 			}
-		case key.Matches(msg, m.keys.DeleteObject):
-			m.CoreModel.GoToDeleteTaskView()
-			m.form = confirmDeleteTaskForm()
-			return m, m.form.Init()
 		case key.Matches(msg, m.keys.Back):
 			m.CoreModel.GoToListView()
 		case key.Matches(msg, m.keys.Help):
@@ -970,10 +990,13 @@ func (m *Model) updateLogsList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case key.Matches(msg, m.keys.DeleteObject):
 			if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
-				m.CoreModel.selectedLog = log
-				m.CoreModel.GoToDeleteLogView()
-				m.form = confirmDeleteLogForm()
-				return m, m.form.Init()
+                m.CoreModel.selectedLog = log
+				m.deleteDialogType = logDeleteDialog
+				m.deleteConfirmCursor = 0
+				m.deleteAction = func() CoreCommand {
+					return m.CoreModel.DeleteLog(log.ID)
+				}
+				return m, nil
 			}
 		case key.Matches(msg, m.keys.CreateObject):
 			m.CoreModel.state = fullscreenLogEditView
@@ -1103,14 +1126,14 @@ func (m *Model) handleFormCompletion(formType string) CoreCommand {
 }
 
 func (m *Model) updateConfirmDeleteDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if !m.deleteConfirmationVisible {
+	if m.deleteDialogType == noDialog {
 		return m, nil
 	}
 
 	if msg, ok := msg.(tea.KeyMsg); ok {
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
-			m.deleteConfirmationVisible = false
+			m.deleteDialogType = noDialog
 			return m, nil
 
 		case "left", "h", "tab":
@@ -1120,7 +1143,7 @@ func (m *Model) updateConfirmDeleteDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.deleteConfirmCursor = (m.deleteConfirmCursor + 1) % 2
 
 		case "enter":
-			m.deleteConfirmationVisible = false
+			m.deleteDialogType = noDialog
 			if m.deleteConfirmCursor == 1 { // 1 is Delete
 				coreCmd := m.deleteAction()
 				switch coreCmd {
@@ -1205,30 +1228,65 @@ func (m Model) View() string {
 		mainContent = m.form.View()
 	}
 
-	if m.deleteConfirmationVisible {
-		return m.renderConfirmDeleteDialog(mainContent)
+	switch m.deleteDialogType {
+	case noDialog:
+		return mainContent
+	case projectDeleteDialog:
+		return m.renderProjectDeleteDialog()
+	case taskDeleteDialog:
+		return m.renderTaskDeleteDialog()
+	case logDeleteDialog:
+		return m.renderLogDeleteDialog()
 	}
-
 	return mainContent
 }
 
-func (m *Model) renderConfirmDeleteDialog(underlyingContent string) string {
+func (m *Model) renderProjectDeleteDialog() string {
+	project := m.GetSelectedProject()
+	styledName := detailTitleStyle.Render(fmt.Sprintf("'%s'", project.Name))
+	question := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		lipgloss.NewStyle().Bold(true).Render("Delete "),
+		styledName,
+		lipgloss.NewStyle().Bold(true).Render("?"),
+	)
+	subText := "This will delete all tasks and logs. This action cannot be undone."
+	return m.renderConfirmationDialog(question, subText)
+}
+
+func (m *Model) renderTaskDeleteDialog() string {
+	task := m.GetSelectedTask()
+	styledName := detailTitleStyle.Render(fmt.Sprintf("'%s'", task.Title))
+	question := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		lipgloss.NewStyle().Bold(true).Render("Delete "),
+		styledName,
+		lipgloss.NewStyle().Bold(true).Render("?"),
+	)
+	return m.renderConfirmationDialog(question, "")
+}
+
+func (m *Model) renderLogDeleteDialog() string {
+	log := m.GetSelectedLog()
+	styledName := detailTitleStyle.Render(fmt.Sprintf("'%s'", log.Title))
+	question := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		lipgloss.NewStyle().Bold(true).Render("Delete "),
+		styledName,
+		lipgloss.NewStyle().Bold(true).Render("?"),
+	)
+	return m.renderConfirmationDialog(question, "")
+}
+func (m *Model) renderConfirmationDialog(question string, subtext string) string {
 	// Dialog styling
 	dialogBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#874BFD")).
 		Padding(1, 2)
 
-	styledName := detailTitleStyle.Render(fmt.Sprintf("'%s'", m.itemToDeleteName))
-	questionParts := []string{
-		lipgloss.NewStyle().Bold(true).Render("Delete"),
-		" ",
-		styledName,
-		lipgloss.NewStyle().Bold(true).Render("?"),
-	}
-	question := lipgloss.JoinHorizontal(lipgloss.Left, questionParts...)
-
-	subtext := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("This will delete all tasks and logs. This action cannot be undone.")
+	// Text styling
+	// question := lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("Delete %s", styledName)) + "?"
+	// subtext := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("This will delete all tasks and logs. This action cannot be undone.")
 
 	// Button styling
 	cancelButton := "[ Cancel ]"
@@ -1244,8 +1302,8 @@ func (m *Model) renderConfirmDeleteDialog(underlyingContent string) string {
 
 	// Assemble dialog content
 	ui := lipgloss.JoinVertical(lipgloss.Center,
-		question,
-		subtext,
+		lipgloss.NewStyle().Bold(true).Render(question),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(subtext),
 		"",
 		buttons,
 	)
@@ -1255,7 +1313,7 @@ func (m *Model) renderConfirmDeleteDialog(underlyingContent string) string {
 	// Place the dialog in the center of the screen
 	centeredDialog := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog)
 
-	return lipgloss.JoinVertical(lipgloss.Left, underlyingContent, centeredDialog)
+	return lipgloss.JoinVertical(lipgloss.Left, centeredDialog)
 }
 
 func (m *Model) renderTabularView() string {
@@ -1740,36 +1798,6 @@ func newLogEditFormWithData(width, height int, title, desc string) *LogEditForm 
 }
 
 var theme *huh.Theme = huh.ThemeDracula()
-
-func confirmDeleteForm() *huh.Form {
-	return huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Are you sure you want to delete this project?").
-				Key("confirm"),
-		),
-	).WithTheme(theme)
-}
-
-func confirmDeleteTaskForm() *huh.Form {
-	return huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Are you sure you want to delete this task?").
-				Key("confirm"),
-		),
-	).WithTheme(theme)
-}
-
-func confirmDeleteLogForm() *huh.Form {
-	return huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Are you sure you want to delete this log?").
-				Key("confirm"),
-		),
-	).WithTheme(theme)
-}
 
 func updateProjectForm(p service.Project) *huh.Form {
 	return huh.NewForm(
