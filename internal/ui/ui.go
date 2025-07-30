@@ -105,7 +105,6 @@ const (
 
 type ProjectKeyMap struct {
 	UpdateProject   key.Binding
-	CreateTask      key.Binding
 	CreateLog       key.Binding
 	GotoDetails     key.Binding
 	GotoTasks       key.Binding
@@ -115,26 +114,36 @@ type ProjectKeyMap struct {
 	Back            key.Binding
 	Help            key.Binding
 	ToggleDone      key.Binding
-	DeleteTask      key.Binding
-	SelectTask      key.Binding
+	DeleteObject    key.Binding
+	SelectObject    key.Binding
 	CursorUp        key.Binding
 	CursorDown      key.Binding
-	ExitEdit        key.Binding
+	Edit            key.Binding
 	SwitchFocus     key.Binding
 	ToggleCompleted key.Binding
 	CreateObject    key.Binding
 }
 
 func (k ProjectKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.UpdateProject, k.CreateTask, k.CreateLog, k.Back, k.Help, k.SwitchFocus}
+	return []key.Binding{
+		k.UpdateProject, k.CreateObject, k.TabRight, k.ToggleDone, k.Back, k.Help,
+	}
 }
 
 func (k ProjectKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.UpdateProject, k.CreateTask, k.CreateLog},
-		{k.GotoDetails, k.GotoTasks, k.GotoLogs, k.TabLeft, k.TabRight},
-		{k.Back, k.Help, k.SwitchFocus},
-		{k.ToggleDone, k.DeleteTask, k.SelectTask, k.CursorUp, k.CursorDown, k.ExitEdit, k.CreateObject},
+		// navigation
+		{
+			k.TabLeft, k.TabRight, k.GotoDetails, k.GotoTasks,
+			k.GotoLogs, k.CursorUp, k.CursorDown, k.SwitchFocus, k.Back,
+		},
+		// actions
+		{
+			k.CreateObject, k.UpdateProject, k.CreateLog, k.Edit,
+			k.ToggleDone, k.ToggleCompleted, k.DeleteObject,
+		},
+		//help
+		{k.Help},
 	}
 }
 
@@ -164,12 +173,12 @@ var projectKeys = ProjectKeyMap{
 		key.WithHelp("←/ctrl+h", "previous tab"),
 	),
 	TabRight: key.NewBinding(
-		key.WithKeys("right", "ctrl+l"),
-		key.WithHelp("→/ctrl+l", "next tab"),
+		key.WithKeys("right", "ctrl+l", "tab"),
+		key.WithHelp("→/ctrl+l/tab", "next tab"),
 	),
 	Back: key.NewBinding(
 		key.WithKeys("esc", "b", "ctrl+c"),
-		key.WithHelp("esc/b/ctrl+c", "back to list"),
+		key.WithHelp("esc/b", "back"),
 	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
@@ -179,11 +188,11 @@ var projectKeys = ProjectKeyMap{
 		key.WithKeys(" "),
 		key.WithHelp("space", "toggle done"),
 	),
-	DeleteTask: key.NewBinding(
+	DeleteObject: key.NewBinding(
 		key.WithKeys("d"),
 		key.WithHelp("d", "delete task"),
 	),
-	SelectTask: key.NewBinding(
+	SelectObject: key.NewBinding(
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "select task"),
 	),
@@ -195,9 +204,9 @@ var projectKeys = ProjectKeyMap{
 		key.WithKeys("down", "j"),
 		key.WithHelp("↓/j", "move down"),
 	),
-	ExitEdit: key.NewBinding(
+	Edit: key.NewBinding(
 		key.WithKeys("e"),
-		key.WithHelp("e", "exit edit"),
+		key.WithHelp("e", "edit"),
 	),
 	CreateObject: key.NewBinding(
 		key.WithKeys("n"),
@@ -530,7 +539,7 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, m.keys.SwitchFocus):
 				m.logViewFocus = focusList
 				return m, nil
-			case key.Matches(msg, m.keys.ExitEdit):
+			case key.Matches(msg, m.keys.Edit):
 				if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
 					m.CoreModel.selectedLog = log
 					m.CoreModel.state = updateLogView
@@ -650,7 +659,7 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return model, cmd
 			case taskDetailReadonly:
 				switch {
-				case key.Matches(msg, m.keys.ExitEdit):
+				case key.Matches(msg, m.keys.Edit):
 					m.taskDetailMode = taskDetailEdit
 					if task := m.CoreModel.GetSelectedTask(); task != nil {
 						m.taskEditForm = newTaskEditForm(*task)
@@ -670,6 +679,10 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
 						m.CoreModel.selectedTask = task
 					}
+				case key.Matches(msg, m.keys.DeleteObject):
+					m.CoreModel.GoToDeleteTaskView()
+					m.form = confirmDeleteTaskForm()
+					return m, m.form.Init()
 				case key.Matches(msg, m.keys.ToggleDone):
 					tasks := m.CoreModel.GetTasks()
 					if m.selectedTaskIndex >= 0 && m.selectedTaskIndex < len(tasks) {
@@ -796,14 +809,14 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.logEditForm = newLogEditForm(m.width, m.height)
 						return m, m.logEditForm.Init()
 
-					case key.Matches(msg, m.keys.ExitEdit):
+					case key.Matches(msg, m.keys.Edit):
 						if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
 							m.CoreModel.selectedLog = log
 							m.CoreModel.state = updateLogView
 							m.logEditForm = newLogEditFormWithData(m.width, m.height, log.Title, log.Desc)
 							return m, m.logEditForm.Init()
 						}
-					case key.Matches(msg, m.keys.DeleteTask):
+					case key.Matches(msg, m.keys.DeleteObject):
 						if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
 							m.CoreModel.selectedLog = log
 							m.CoreModel.GoToDeleteLogView()
@@ -856,13 +869,13 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selectedTaskIndex > maxIndex {
 				m.selectedTaskIndex = maxIndex
 			}
-		case key.Matches(msg, m.keys.SelectTask):
+		case key.Matches(msg, m.keys.SelectObject):
 			if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
 				m.CoreModel.selectedTask = task
 				m.taskDetailMode = taskDetailReadonly
 			}
 			return m, nil
-		case key.Matches(msg, m.keys.ExitEdit):
+		case key.Matches(msg, m.keys.Edit):
 			if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
 				m.CoreModel.selectedTask = task
 			}
@@ -871,7 +884,7 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.taskEditForm = newTaskEditForm(*task)
 				return m, m.taskEditForm.Init()
 			}
-		case key.Matches(msg, m.keys.DeleteTask):
+		case key.Matches(msg, m.keys.DeleteObject):
 			m.CoreModel.GoToDeleteTaskView()
 			m.form = confirmDeleteTaskForm()
 			return m, m.form.Init()
@@ -902,21 +915,21 @@ func (m *Model) updateLogsList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selectedLogIndex < len(logs)-1 {
 				m.selectedLogIndex++
 			}
-		case key.Matches(msg, m.keys.SelectTask):
+		case key.Matches(msg, m.keys.SelectObject):
 			if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
 				m.CoreModel.selectedLog = log
 				m.logDetailMode = logDetailReadonly
 				m.logViewFocus = focusList
 			}
 			return m, nil
-		case key.Matches(msg, m.keys.ExitEdit):
+		case key.Matches(msg, m.keys.Edit):
 			if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
 				m.CoreModel.selectedLog = log
 				m.CoreModel.state = updateLogView
 				m.logEditForm = newLogEditFormWithData(m.width, m.height, log.Title, log.Desc)
 				return m, m.logEditForm.Init()
 			}
-		case key.Matches(msg, m.keys.DeleteTask):
+		case key.Matches(msg, m.keys.DeleteObject):
 			if log := m.getLogAtIndex(m.selectedLogIndex); log != nil {
 				m.CoreModel.selectedLog = log
 				m.CoreModel.GoToDeleteLogView()
