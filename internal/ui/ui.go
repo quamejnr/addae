@@ -441,6 +441,17 @@ func (m *Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.form = confirmDeleteForm()
 					return m, m.form.Init()
 				}
+			case "u":
+				if selectedIndex := m.list.Index(); selectedIndex >= 0 {
+					projects := m.CoreModel.GetProjects()
+					if selectedIndex < len(projects) {
+						selectedProject := projects[selectedIndex]
+						m.CoreModel.selectedProject = &selectedProject
+						m.CoreModel.GoToUpdateView()
+						m.form = updateProjectForm(selectedProject)
+						return m, m.form.Init()
+					}
+				}
 			case "q", "ctrl+c":
 				return m, tea.Quit
 			}
