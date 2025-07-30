@@ -1139,14 +1139,12 @@ func (m *Model) renderDetailPanel() string {
 		return emptyDetailStyle.Render("← Select a project to view details")
 	}
 
-	contentHeight := m.height - 6
-
 	// Handle tasks split view
 	if m.activeTab == tasksTab && m.taskDetailMode != taskDetailNone {
 		var s strings.Builder
 		s.WriteString(m.renderTabs())
 		s.WriteString("\n")
-		s.WriteString(m.renderTasksSplitView(contentHeight))
+		s.WriteString(m.renderTasksSplitView())
 		s.WriteString("\n")
 		s.WriteString(m.help.View(m.keys))
 		return s.String()
@@ -1157,7 +1155,7 @@ func (m *Model) renderDetailPanel() string {
 		var s strings.Builder
 		s.WriteString(m.renderTabs())
 		s.WriteString("\n")
-		s.WriteString(m.renderLogsSplitView(contentHeight))
+		s.WriteString(m.renderLogsSplitView())
 		s.WriteString("\n")
 		s.WriteString(m.help.View(m.keys))
 		return s.String()
@@ -1178,17 +1176,19 @@ func (m *Model) renderDetailPanel() string {
 		content = m.renderLogsListOnly()
 	}
 
-	contentStyle := lipgloss.NewStyle().Height(contentHeight - 2)
-	s.WriteString(contentStyle.Render(content))
+	// Ensure content takes up the available space consistently
+	// contentStyle := lipgloss.NewStyle().Height(contentHeight - 2) // -2 for tab spacing
+	// s.WriteString(contentStyle.Render(content))
+    s.WriteString(content)
 	s.WriteString("\n")
 	s.WriteString(m.help.View(m.keys))
 	return s.String()
 }
 
-func (m *Model) renderLogsSplitView(totalHeight int) string {
+func (m *Model) renderLogsSplitView() string {
 	leftWidth := m.width/2 - 4
 	rightWidth := m.width/2 - 4
-	splitHeight := totalHeight - 2
+	splitHeight := m.height - 2
 
 	var logListContent strings.Builder
 
@@ -1254,10 +1254,11 @@ func (m *Model) renderLogDetailPanel() string {
 	return s.String()
 }
 
-func (m *Model) renderTasksSplitView(totalHeight int) string {
+func (m *Model) renderTasksSplitView() string {
 	leftWidth := m.width/2 - 4
 	rightWidth := m.width/2 - 4
-	splitHeight := totalHeight - 2
+	// splitHeight := totalHeight - 2 // -2 for spacing
+    splitHeight := m.height - 8
 
 	var taskListContent strings.Builder
 
