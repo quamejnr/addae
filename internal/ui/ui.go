@@ -122,6 +122,7 @@ type ProjectKeyMap struct {
 	SwitchFocus     key.Binding
 	ToggleCompleted key.Binding
 	CreateObject    key.Binding
+	CreateTask      key.Binding
 }
 
 func (k ProjectKeyMap) ShortHelp() []key.Binding {
@@ -151,6 +152,10 @@ var projectKeys = ProjectKeyMap{
 	UpdateProject: key.NewBinding(
 		key.WithKeys("u"),
 		key.WithHelp("u", "update project"),
+	),
+	CreateTask: key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "create task"),
 	),
 	CreateLog: key.NewBinding(
 		key.WithKeys("l"),
@@ -595,6 +600,11 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.form = updateProjectForm(*project)
 					return m, m.form.Init()
 				}
+			case key.Matches(msg, m.keys.CreateTask):
+				m.activeTab = tasksTab
+				m.quickInputActive = true
+				m.quickTaskInput.Focus()
+				return m, textinput.Blink
 			case key.Matches(msg, m.keys.CreateLog):
 				m.CoreModel.state = fullscreenLogEditView
 				m.logEditForm = newLogEditForm(m.width, m.height)
@@ -1114,8 +1124,8 @@ func (m *Model) loadProjectDetails(index int) {
 	}
 
 	// Reset cursor positions for tasks and logs to prevent out-of-bounds errors
-    // when I leave a project and move to another the selectedindex still persist
-    // This can lead to cursor being out of position for some tasks and logs
+	// when I leave a project and move to another the selectedindex still persist
+	// This can lead to cursor being out of position for some tasks and logs
 	m.selectedTaskIndex = 0
 	m.selectedLogIndex = 0
 }
