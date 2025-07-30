@@ -265,7 +265,7 @@ var (
 				Padding(0, 2)
 
 	projectDetailStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("39"))
+				Foreground(lipgloss.Color("#BD93F9"))
 
 	subStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{
 		Light: "#B2B2B2",
