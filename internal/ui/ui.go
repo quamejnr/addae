@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -205,6 +206,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// updateListView handles updates for the list view.
 func (m *Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
@@ -260,6 +262,7 @@ func (m *Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// updateFullscreenLogEdit handles updates for the fullscreen log edit view.
 func (m *Model) updateFullscreenLogEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.logEditForm == nil {
 		m.CoreModel.GoToProjectView()
@@ -305,7 +308,7 @@ func (m *Model) updateFullscreenLogEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.activeTab = logsTab
 			case CoreShowError:
-				// Handle error if needed
+				fmt.Printf("Something went wrong %s", m.err.Error())
 			}
 		}
 		m.CoreModel.GoToProjectView()
@@ -316,6 +319,7 @@ func (m *Model) updateFullscreenLogEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// updateProjectViewCommon handles common updates for the project view.
 func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -653,6 +657,7 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// updateTasksList handles updates for the tasks list.
 func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	tasks := m.CoreModel.GetTasks()
 	if len(tasks) == 0 {
@@ -726,6 +731,7 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateLogsList handles updates for the logs list.
 func (m *Model) updateLogsList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	logs := m.CoreModel.GetLogs()
 	if len(logs) == 0 {
@@ -781,6 +787,7 @@ func (m *Model) updateLogsList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateFormView handles updates for the form view.
 func (m *Model) updateFormView(msg tea.Msg, formType string) (tea.Model, tea.Cmd) {
 	var formCmd tea.Cmd
 	var updatedForm tea.Model
@@ -811,6 +818,7 @@ func (m *Model) updateFormView(msg tea.Msg, formType string) (tea.Model, tea.Cmd
 	return m, formCmd
 }
 
+// handleFormAbort handles the aborting of a form.
 func (m *Model) handleFormAbort(formType string) {
 	switch formType {
 	case "create":
@@ -828,6 +836,7 @@ func (m *Model) handleFormAbort(formType string) {
 	}
 }
 
+// handleFormCompletion handles the completion of a form.
 func (m *Model) handleFormCompletion(formType string) CoreCommand {
 	switch formType {
 	case "create":
@@ -894,6 +903,7 @@ func (m *Model) handleFormCompletion(formType string) CoreCommand {
 	return NoCoreCmd
 }
 
+// updateConfirmDeleteDialog handles updates for the delete confirmation dialog.
 func (m *Model) updateConfirmDeleteDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.deleteDialogType == noDialog {
 		return m, nil
@@ -931,6 +941,7 @@ func (m *Model) updateConfirmDeleteDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// refreshListItems refreshes the list of projects.
 func (m *Model) refreshListItems() {
 	projects := m.CoreModel.GetProjects()
 	items := make([]list.Item, len(projects))
@@ -953,6 +964,7 @@ func (m *Model) refreshListItems() {
 	m.loadProjectDetails(idx)
 }
 
+// loadProjectDetails loads the details of a project.
 func (m *Model) loadProjectDetails(index int) {
 	if index < 0 || index >= len(m.CoreModel.GetProjects()) {
 		return
@@ -977,6 +989,7 @@ func (m *Model) loadProjectDetails(index int) {
 	m.selectedLogIndex = 0
 }
 
+// getMaxNavigableTaskIndex returns the maximum navigable task index.
 func (m *Model) getMaxNavigableTaskIndex() int {
 	tasks := m.CoreModel.GetTasks()
 	var pending []service.Task
@@ -993,6 +1006,7 @@ func (m *Model) getMaxNavigableTaskIndex() int {
 	return maxIndex
 }
 
+// getVisualTask returns the visual task at the given index.
 func (m *Model) getVisualTask(index int) *service.Task {
 	tasks := m.CoreModel.GetTasks()
 
@@ -1019,6 +1033,7 @@ func (m *Model) getVisualTask(index int) *service.Task {
 	return nil
 }
 
+// getLogAtIndex returns the log at the given index.
 func (m *Model) getLogAtIndex(index int) *service.Log {
 	logs := m.CoreModel.GetLogs()
 	if index >= 0 && index < len(logs) {
@@ -1026,3 +1041,4 @@ func (m *Model) getLogAtIndex(index int) *service.Log {
 	}
 	return nil
 }
+
