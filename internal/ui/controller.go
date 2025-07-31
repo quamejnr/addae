@@ -19,6 +19,67 @@ const (
 	CoreShowError
 )
 
+// viewState represents the current view of the application.
+type viewState int
+
+const (
+	listView viewState = iota
+	projectView
+	updateView
+	createView
+	deleteView
+	createTaskView
+	createLogView
+	deleteTaskView
+	fullscreenLogEditView
+	updateLogView
+	deleteLogView
+)
+
+// detailTab represents the active tab in the detail view.
+type detailTab int
+
+const (
+	projectDetailTab detailTab = iota
+	tasksTab
+	logsTab
+)
+
+// focusState represents the focus state of a view.
+type focusState int
+
+const (
+	focusList focusState = iota
+	focusForm
+)
+
+// dialogType represents the type of dialog to display.
+type dialogType int
+
+const (
+	noDialog dialogType = iota
+	projectDeleteDialog
+	taskDeleteDialog
+	logDeleteDialog
+)
+
+// taskDetailMode represents the mode of the task detail view.
+type taskDetailMode int
+
+const (
+	taskDetailNone taskDetailMode = iota
+	taskDetailReadonly
+	taskDetailEdit
+)
+
+// logDetailMode represents the mode of the log detail view.
+type logDetailMode int
+
+const (
+	logDetailNone logDetailMode = iota
+	logDetailReadonly
+)
+
 // CoreModel handles all business logic without UI concerns
 type CoreModel struct {
 	service         Service
