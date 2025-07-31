@@ -280,9 +280,7 @@ func (f *LogEditForm) Update(msg tea.Msg) (*LogEditForm, tea.Cmd) {
 
 func (f *LogEditForm) View() string {
     help := subStyle.Render("ctrl+s: save • esc: cancel • tab: next field ")
-	return lipgloss.NewStyle().
-		Padding(1, 0).
-		Render(lipgloss.JoinVertical(
+	return lipgloss.JoinVertical(
 			lipgloss.Left,
 			"",
 			f.titleInput.View(),
@@ -290,7 +288,7 @@ func (f *LogEditForm) View() string {
 			f.textarea.View(),
 			"",
 			help,
-		))
+		)
 }
 
 func (f *LogEditForm) GetContent() (string, string) {

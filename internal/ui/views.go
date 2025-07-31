@@ -17,7 +17,7 @@ func (m *Model) renderTabularView() string {
 
 	leftColumn := leftColumnStyle.
 		Width(leftWidth).
-		MarginTop(1).
+		Margin(2).
 		Render(m.list.View())
 
 	rightColumn := rightColumnStyle.
@@ -460,17 +460,21 @@ func (m *Model) View() string {
 		mainContent = m.renderCenteredForm()
 	}
 
+	var finalView string
 	switch m.deleteDialogType {
 	case noDialog:
-		return mainContent
+		finalView = mainContent
 	case projectDeleteDialog:
-		return m.renderProjectDeleteDialog()
+		finalView = m.renderProjectDeleteDialog()
 	case taskDeleteDialog:
-		return m.renderTaskDeleteDialog()
+		finalView = m.renderTaskDeleteDialog()
 	case logDeleteDialog:
-		return m.renderLogDeleteDialog()
+		finalView = m.renderLogDeleteDialog()
+	default:
+		finalView = mainContent
 	}
-	return mainContent
+
+	return appStyle.Render(finalView)
 }
 
 func (m *Model) renderProjectDeleteDialog() string {
