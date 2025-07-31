@@ -680,6 +680,10 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case key.Matches(msg, m.keys.ToggleDone):
 			task := m.getVisualTask(m.selectedTaskIndex)
+			if task == nil {
+				break
+			}
+
 			var completedAt *time.Time
 			if task.CompletedAt == nil {
 				now := time.Now()
@@ -1023,7 +1027,11 @@ func (m *Model) getVisualTask(index int) *service.Task {
 	}
 
 	if index < len(pending) {
-		return &pending[index]
+		if index >= 0 {
+			return &pending[index]
+		}
+
+		return nil
 	}
 
 	if m.showCompleted {
@@ -1044,4 +1052,3 @@ func (m *Model) getLogAtIndex(index int) *service.Log {
 	}
 	return nil
 }
-
