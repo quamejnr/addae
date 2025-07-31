@@ -366,9 +366,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		listWidth := m.width/2 - 4
-		listHeight := m.height - 4
-		m.list.SetSize(listWidth, listHeight)
 
 		// Update viewport size
 		rightWidth := m.width/2 - 4
@@ -1316,6 +1313,9 @@ func (m *Model) renderConfirmationDialog(question string, subtext string) string
 func (m *Model) renderTabularView() string {
 	leftWidth := m.width/2 - 4
 	rightWidth := m.width/2 - 4
+	splitHeight := m.height - 5
+
+	m.list.SetHeight(splitHeight)
 
 	leftColumn := leftColumnStyle.
 		Width(leftWidth).
@@ -1324,6 +1324,7 @@ func (m *Model) renderTabularView() string {
 
 	rightColumn := rightColumnStyle.
 		Width(rightWidth).
+		MaxHeight(splitHeight).
 		Render(m.renderDetailPanel())
 
 	return lipgloss.NewStyle().Render(
