@@ -1,6 +1,6 @@
 # .goreleaser.yml
 builds:
-  - main: ./cmd/main.go
+  - main: main.go
     ldflags:
       - -s -w
     goos:
