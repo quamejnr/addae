@@ -6,13 +6,6 @@
 
 **Addae** is a terminal-based project management tool designed to help you manage all your projects in one place. It provides a simple and efficient way to track projects, tasks, and development logs without leaving your terminal.
 
-***
-
-> [!TIP]
->
-> **Project Status:** This project is currently under active development. Feedback and contributions are welcome!
-
-***
 
 ## Demo
 
