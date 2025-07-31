@@ -220,12 +220,15 @@ func (m *Model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyMsg:
 			switch msg.String() {
 			case "enter":
-				if selected := m.list.Index(); selected >= 0 {
-					coreCmd := m.CoreModel.SelectProject(selected)
-					if coreCmd == CoreShowError {
-						return m, nil
+				// Only attempt to select a project if there are projects in the list
+				if len(m.CoreModel.GetProjects()) > 0 {
+					if selected := m.list.Index(); selected >= 0 {
+						coreCmd := m.CoreModel.SelectProject(selected)
+						if coreCmd == CoreShowError {
+							return m, nil
+						}
+						m.CoreModel.GoToProjectView()
 					}
-					m.CoreModel.GoToProjectView()
 				}
 			case "n":
 				m.CoreModel.GoToCreateView()
