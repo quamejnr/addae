@@ -1,7 +1,9 @@
 package main
 
 import (
+	"embed"
 	"fmt"
+	"io/fs"
 
 	"github.com/quamejnr/addae/internal/service"
 	"github.com/quamejnr/addae/internal/ui"
@@ -10,6 +12,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+//go:embed internal/db/migrations/*.sql
+var migrationsFS embed.FS
 
 func main() {
 	// Initialize database
@@ -20,8 +25,15 @@ func main() {
 	}
 	defer database.Close()
 
-	// run migrations
-	if err := db.RunMigrations(database, "./internal/db/migrations/"); err != nil {
+	// Get the migrations subdirectory
+	migrations, err := fs.Sub(migrationsFS, "internal/db/migrations")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	// Run migrations with embedded files
+	if err := db.RunMigrationsFromFS(database, migrations); err != nil {
 		fmt.Println(err)
 		return
 	}
@@ -43,4 +55,3 @@ func main() {
 		return
 	}
 }
-

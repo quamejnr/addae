@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 
@@ -62,4 +63,16 @@ func RunMigrations(db *sql.DB, migrationsDir string) error {
 	// restore logs to stdout
 	log.SetOutput(os.Stdout)
 	return nil
+}
+
+func RunMigrationsFromFS(db *sql.DB, migrationsFS fs.FS) error {
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		return err
+	}
+
+	// temporarily disabling logs in the goose.Up function after migration
+	log.SetOutput(io.Discard)
+
+	goose.SetBaseFS(migrationsFS)
+	return goose.Up(db, ".")
 }
