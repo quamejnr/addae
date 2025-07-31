@@ -7,9 +7,31 @@
 **Addae** is a terminal-based project management tool designed to help you manage all your projects in one place. It provides a simple and efficient way to track projects, tasks, and development logs without leaving your terminal.
 
 
-## Demo
+## 📸 Screenshots
 
-![addae-demo](https://github.com/user-attachments/assets/b855a847-2369-490f-94ff-353c625488a5)
+<p align="center">
+  <img src="./.github/assets/projects-list-view.png" alt="Project List View" width="70%"/>
+  <br>
+  <em>Project List View: See all your projects at a glance.</em>
+</p>
+
+<p align="center">
+  <img src="./.github/assets/create-task.png" alt="Task Management" width="70%"/>
+  <br>
+  <em>Task Management: Easily add, edit, and complete tasks.</em>
+</p>
+
+<p align="center">
+  <img src="./.github/assets/logs-markdown-rendering.png" alt="Log Editor" width="70%"/>
+  <br>
+  <em>Log Editor: Write and view development logs with markdown support.</em>
+</p>
+
+<p align="center">
+  <img src="./.github/assets/delete-project-dialog.png" alt="Delete Project Dialog" width="70%"/>
+  <br>
+  <em>Delete Project Dialog: Confirmation dialog for deleting projects.</em>
+</p>
 
 ## ✨ Features
 
