@@ -1,3 +1,38 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically
+*.out
+
+# Dependency directories (remove the comment below if you do not commit your vendor dir)
+# vendor/
+
+# Go workspace file
+go.work
+
+# Addae specific
 addae
 addae.db
 log.md
+
+# OS-generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor-specific files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
