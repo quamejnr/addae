@@ -1225,7 +1225,8 @@ func (m Model) View() string {
 			mainContent = m.logEditForm.View()
 		}
 	case updateView, createView, deleteView, createTaskView, createLogView, deleteTaskView, deleteLogView:
-		mainContent = m.form.View()
+		// mainContent = m.form.View()
+		mainContent = m.renderCenteredForm()
 	}
 
 	switch m.deleteDialogType {
@@ -1799,29 +1800,33 @@ func updateProjectForm(p service.Project) *huh.Form {
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Name").
+				Title("Project Name").
 				Key("name").
-				Value(&p.Name),
+				Value(&p.Name).
+				Placeholder("My Awesome Project"),
 			huh.NewText().
-				Title("Summary").
+				Title("Project Summary").
 				Key("summary").
 				CharLimit(255).
-				Value(&p.Summary),
+				Value(&p.Summary).
+				Placeholder("A short description of what this project is about..."),
 			huh.NewText().
-				Title("Description").
+				Title("Detailed Description").
 				Key("desc").
-				Value(&p.Desc),
+				Value(&p.Desc).
+				Placeholder("Provide detailed information about your project..."),
 			huh.NewSelect[string]().
-				Title("Status").
+				Title("Project Status").
 				Key("status").
 				Options(
-					huh.NewOption("Todo", "todo"),
-					huh.NewOption("In Progress", "in progress"),
-					huh.NewOption("Completed", "completed"),
-					huh.NewOption("Archived", "archived"),
+					huh.NewOption("◯ Todo", "todo"),
+					huh.NewOption("◐ In Progress", "in progress"),
+					huh.NewOption("● Completed", "completed"),
+					huh.NewOption("▣ Archived", "archived"),
 				).
 				Value(&p.Status),
-		),
+		).Title("Update Project").
+			Description("Modify your project details"),
 	).WithTheme(theme)
 }
 
@@ -1830,31 +1835,53 @@ func createProjectForm() *huh.Form {
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Name").
+				Title("Project Name").
 				Key("name").
-				Placeholder("Enter name of project"),
+				Placeholder("My New Project").
+				Validate(func(str string) error {
+					if len(str) == 0 {
+						return fmt.Errorf("project name is required")
+					}
+					return nil
+				}),
 			huh.NewText().
-				CharLimit(255).
-				Title("Summary").
+				Title("Project Summary").
 				Key("summary").
-				Placeholder("Enter overview of project"),
+				CharLimit(255).
+				Placeholder("What is this project about in one sentence?"),
 			huh.NewText().
 				Title("Description (Optional)").
 				Key("desc").
-				Placeholder("Enter detailed description of project"),
-			huh.NewSelect[string]().Title("Status").
+				Placeholder("Provide comprehensive details about your project goals, requirements, and scope..."),
+			huh.NewSelect[string]().
+				Title("Status").
 				Key("status").
 				Options(
-					huh.NewOption("Todo", "todo"),
-					huh.NewOption("In Progress", "in progress"),
-					huh.NewOption("Done", "completed"),
-					huh.NewOption("Archived", "archived"),
+					huh.NewOption("◯ Todo", "todo"),
+					huh.NewOption("◐ In Progress", "in progress"),
+					huh.NewOption("● Completed", "completed"),
+					huh.NewOption("▣ Archived", "archived"),
 				).
 				Value(&defaultValue),
-		),
+		).Title("Create New Project").
+			Description("Set up your new project with essential details"),
 	).WithTheme(theme)
 }
 
+func (m *Model) renderCenteredForm() string {
+	if m.form == nil {
+		return ""
+	}
+
+	formContent := m.form.View()
+
+	// Center the form on screen
+	return lipgloss.Place(
+		m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		formContent,
+	)
+}
 
 type TaskEditForm struct {
 	titleInput textinput.Model
