@@ -67,6 +67,12 @@ If you have Go installed, you can build `addae` from the source code.
 ```bash
 go install github.com/quamejnr/addae@latest
 ```
+> [!Note]
+> If having difficulty installing with go, you add the specific release version instead of latest
+```bash
+go install github.com/quamejnr/addae@v0.1.3
+```
+
 
 ## ⌨️ Keybindings
 
