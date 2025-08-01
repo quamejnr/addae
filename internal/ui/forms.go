@@ -32,6 +32,7 @@ func updateProjectForm(p service.Project) *huh.Form {
 				Title("Detailed Description").
 				Key("desc").
 				Value(&p.Desc).
+				CharLimit(0).
 				Placeholder("Provide detailed information about your project..."),
 			huh.NewSelect[string]().
 				Title("Project Status").
@@ -70,6 +71,7 @@ func createProjectForm() *huh.Form {
 			huh.NewText().
 				Title("Description (Optional)").
 				Key("desc").
+				CharLimit(0).
 				Placeholder("Provide comprehensive details about your project goals, requirements, and scope..."),
 			huh.NewSelect[string]().
 				Title("Status").
@@ -106,6 +108,7 @@ func newTaskEditForm(task service.Task) *TaskEditForm {
 	descInput.SetHeight(5)
 	descInput.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	descInput.ShowLineNumbers = false
+    descInput.CharLimit = 0
 
 	return &TaskEditForm{
 		titleInput: titleInput,
@@ -220,7 +223,7 @@ func newLogEditForm(width, height int) *LogEditForm {
 	ta.SetWidth(width - 6)
 	ta.SetHeight(height - 6)
 	ta.ShowLineNumbers = false
-    ta.CharLimit = 5000
+	ta.CharLimit = 0
 
 	return &LogEditForm{
 		titleInput: titleInput,
@@ -279,16 +282,16 @@ func (f *LogEditForm) Update(msg tea.Msg) (*LogEditForm, tea.Cmd) {
 }
 
 func (f *LogEditForm) View() string {
-    help := subStyle.Render("ctrl+s: save • esc: cancel • tab: next field ")
+	help := subStyle.Render("ctrl+s: save • esc: cancel • tab: next field ")
 	return lipgloss.JoinVertical(
-			lipgloss.Left,
-			"",
-			f.titleInput.View(),
-			"",
-			f.textarea.View(),
-			"",
-			help,
-		)
+		lipgloss.Left,
+		"",
+		f.titleInput.View(),
+		"",
+		f.textarea.View(),
+		"",
+		help,
+	)
 }
 
 func (f *LogEditForm) GetContent() (string, string) {

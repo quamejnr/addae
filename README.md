@@ -100,6 +100,9 @@ Addae uses Vim-style keybindings for navigation. Here are the most common comman
 | `?`              | Toggle help             |
 | `esc` / `b` / `ctrl+c`| Back                    |
 
+> [!NOTE]
+> In the log view, `enter` and `tab` will switch focus to the pager, while `esc`/`b` will switch focus back to the list.
+
 ## 🤝 Contributing
 
 Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/quamejnr/addae/issues).
