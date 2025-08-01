@@ -33,6 +33,7 @@ var (
 				MarginBottom(1)
 
 	detailItemStyle = lipgloss.NewStyle().
+			Width(80).
 			Foreground(lipgloss.Color("252"))
 
 	emptyDetailStyle = lipgloss.NewStyle().
