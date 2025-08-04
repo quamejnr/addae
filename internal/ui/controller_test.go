@@ -320,8 +320,8 @@ func TestCreateTask(t *testing.T) {
 	}
 	cmd := coreModel.CreateTask(formData)
 
-	if cmd != CoreRefreshProjectView {
-		t.Errorf("expected CoreRefreshProjectView, got %v", cmd)
+	if cmd != CoreRefreshTasksView {
+		t.Errorf("expected CoreRefreshTasksView, got %v", cmd)
 	}
 	if coreModel.GetState() != projectView {
 		t.Errorf("expected state to be projectView, got %v", coreModel.GetState())
@@ -347,8 +347,8 @@ func TestCreateLog(t *testing.T) {
 	}
 	cmd := coreModel.CreateLog(formData)
 
-	if cmd != CoreRefreshProjectView {
-		t.Errorf("expected CoreRefreshProjectView, got %v", cmd)
+	if cmd != CoreRefreshLogsView {
+		t.Errorf("expected CoreRefreshLogsView, got %v", cmd)
 	}
 	if coreModel.GetState() != projectView {
 		t.Errorf("expected state to be projectView, got %v", coreModel.GetState())
@@ -376,8 +376,8 @@ func TestUpdateLog(t *testing.T) {
 	}
 	cmd := coreModel.UpdateLog(formData)
 
-	if cmd != CoreRefreshProjectView {
-		t.Errorf("expected CoreRefreshProjectView, got %v", cmd)
+	if cmd != CoreRefreshLogsView {
+		t.Errorf("expected CoreRefreshLogsView, got %v", cmd)
 	}
 	if coreModel.GetState() != projectView {
 		t.Errorf("expected state to be projectView, got %v", coreModel.GetState())
@@ -425,8 +425,8 @@ func TestDeleteLog(t *testing.T) {
 
 	cmd := coreModel.DeleteLog(1)
 
-	if cmd != CoreRefreshProjectView {
-		t.Errorf("expected CoreRefreshProjectView, got %v", cmd)
+	if cmd != CoreRefreshLogsView {
+		t.Errorf("expected CoreRefreshLogsView, got %v", cmd)
 	}
 	if coreModel.GetState() != projectView {
 		t.Errorf("expected state to be projectView, got %v", coreModel.GetState())
@@ -450,8 +450,8 @@ func TestConfirmDeleteSelectedLog(t *testing.T) {
 
 	// Test confirmed deletion
 	cmd := coreModel.ConfirmDeleteSelectedLog(true)
-	if cmd != CoreRefreshProjectView {
-		t.Errorf("expected CoreRefreshProjectView when confirmed, got %v", cmd)
+	if cmd != CoreRefreshLogsView {
+		t.Errorf("expected CoreRefreshLogsView when confirmed, got %v", cmd)
 	}
 	if len(mockService.logs) != 0 {
 		t.Errorf("expected 0 logs in mock service after confirmed delete, got %d", len(mockService.logs))
@@ -720,8 +720,8 @@ func TestToggleTaskCompletion(t *testing.T) {
 	// Mark task as complete
 	now := time.Now()
 	cmd := coreModel.ToggleTaskCompletion(1, &now)
-	if cmd != CoreRefreshProjectView {
-		t.Errorf("expected CoreRefreshProjectView, got %v", cmd)
+	if cmd != CoreRefreshTasksView {
+		t.Errorf("expected CoreRefreshTasksView, got %v", cmd)
 	}
 	if mockService.tasks[0].CompletedAt == nil {
 		t.Errorf("expected task to be completed, but CompletedAt is nil")
@@ -729,8 +729,8 @@ func TestToggleTaskCompletion(t *testing.T) {
 
 	// Mark task as incomplete
 	cmd = coreModel.ToggleTaskCompletion(1, nil)
-	if cmd != CoreRefreshProjectView {
-		t.Errorf("expected CoreRefreshProjectView, got %v", cmd)
+	if cmd != CoreRefreshTasksView {
+		t.Errorf("expected CoreRefreshTasksView, got %v", cmd)
 	}
 	if mockService.tasks[0].CompletedAt != nil {
 		t.Errorf("expected task to be incomplete, but CompletedAt is not nil")
@@ -945,8 +945,8 @@ func TestLogUpdateAndDeleteIntegration(t *testing.T) {
 		Desc:  "Updated log description",
 	}
 	cmd := model.CoreModel.UpdateLog(formData)
-	if cmd != CoreRefreshProjectView {
-		t.Errorf("expected CoreRefreshProjectView after update, got %v", cmd)
+	if cmd != CoreRefreshLogsView {
+		t.Errorf("expected CoreRefreshLogsView after update, got %v", cmd)
 	}
 
 	// Verify the log was updated in memory
@@ -960,8 +960,8 @@ func TestLogUpdateAndDeleteIntegration(t *testing.T) {
 	// Test delete log workflow
 	originalLogCount := len(model.CoreModel.GetLogs())
 	cmd = model.CoreModel.ConfirmDeleteSelectedLog(true)
-	if cmd != CoreRefreshProjectView {
-		t.Errorf("expected CoreRefreshProjectView after delete, got %v", cmd)
+	if cmd != CoreRefreshLogsView {
+		t.Errorf("expected CoreRefreshLogsView after delete, got %v", cmd)
 	}
 
 	// Verify the log was deleted
