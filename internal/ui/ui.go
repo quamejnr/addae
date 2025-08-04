@@ -513,24 +513,25 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case key.Matches(msg, m.keys.ToggleDone):
 					tasks := m.CoreModel.GetTasks()
 					if m.selectedTaskIndex >= 0 && m.selectedTaskIndex < len(tasks) {
-						task := m.getVisualTask(m.selectedTaskIndex)
-						var completedAt *time.Time
-						if task.CompletedAt == nil {
-							now := time.Now()
-							completedAt = &now
-						}
-						cmd := m.CoreModel.ToggleTaskCompletion(task.ID, completedAt)
-						if cmd == CoreShowError {
-							return m, nil
-						}
-						m.CoreModel.SelectProject(m.list.Index())
-						if task.CompletedAt == nil && completedAt != nil {
-							if !m.showCompleted && m.selectedTaskIndex > 0 {
-								m.selectedTaskIndex--
+						if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
+							var completedAt *time.Time
+							if task.CompletedAt == nil {
+								now := time.Now()
+								completedAt = &now
 							}
-							maxIndex := m.getMaxNavigableTaskIndex()
-							if m.selectedTaskIndex > maxIndex {
-								m.selectedTaskIndex = maxIndex
+							cmd := m.CoreModel.ToggleTaskCompletion(task.ID, completedAt)
+							if cmd == CoreShowError {
+								return m, nil
+							}
+							m.CoreModel.SelectProject(m.list.Index())
+							if task.CompletedAt == nil && completedAt != nil {
+								if !m.showCompleted && m.selectedTaskIndex > 0 {
+									m.selectedTaskIndex--
+								}
+								maxIndex := m.getMaxNavigableTaskIndex()
+								if m.selectedTaskIndex > maxIndex {
+									m.selectedTaskIndex = maxIndex
+								}
 							}
 						}
 					}
@@ -679,25 +680,26 @@ func (m *Model) updateTasksList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedTaskIndex++
 			}
 		case key.Matches(msg, m.keys.ToggleDone):
-			task := m.getVisualTask(m.selectedTaskIndex)
-			var completedAt *time.Time
-			if task.CompletedAt == nil {
-				now := time.Now()
-				completedAt = &now
-			}
-			cmd := m.CoreModel.ToggleTaskCompletion(task.ID, completedAt)
-			if cmd == CoreShowError {
-				return m, nil
-			}
-			m.CoreModel.SelectProject(m.list.Index())
-			if task.CompletedAt == nil && completedAt != nil {
-				if !m.showCompleted && m.selectedTaskIndex > 0 {
-					m.selectedTaskIndex--
+			if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
+				var completedAt *time.Time
+				if task.CompletedAt == nil {
+					now := time.Now()
+					completedAt = &now
 				}
-			}
-			maxIndex := m.getMaxNavigableTaskIndex()
-			if m.selectedTaskIndex > maxIndex {
-				m.selectedTaskIndex = maxIndex
+				cmd := m.CoreModel.ToggleTaskCompletion(task.ID, completedAt)
+				if cmd == CoreShowError {
+					return m, nil
+				}
+				m.CoreModel.SelectProject(m.list.Index())
+				if task.CompletedAt == nil && completedAt != nil {
+					if !m.showCompleted && m.selectedTaskIndex > 0 {
+						m.selectedTaskIndex--
+					}
+				}
+				maxIndex := m.getMaxNavigableTaskIndex()
+				if m.selectedTaskIndex > maxIndex {
+					m.selectedTaskIndex = maxIndex
+				}
 			}
 		case key.Matches(msg, m.keys.DeleteObject):
 			if task := m.getVisualTask(m.selectedTaskIndex); task != nil {
@@ -1002,7 +1004,11 @@ func (m *Model) getMaxNavigableTaskIndex() int {
 		}
 	}
 
-	maxIndex := len(pending) - 1
+	var maxIndex int
+
+	if len(pending) > 0 {
+		maxIndex = len(pending) - 1
+	}
 	if m.showCompleted {
 		maxIndex = len(tasks) - 1
 	}
@@ -1044,4 +1050,3 @@ func (m *Model) getLogAtIndex(index int) *service.Log {
 	}
 	return nil
 }
-
