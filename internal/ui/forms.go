@@ -252,11 +252,8 @@ func (f *LogEditForm) Update(msg tea.Msg) (*LogEditForm, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+s":
-			f.completed = true
-			return f, nil
 		case "esc":
-			f.aborted = true
+			f.completed = true
 			return f, nil
 		case "tab":
 			f.focus = (f.focus + 1) % 2
@@ -282,7 +279,7 @@ func (f *LogEditForm) Update(msg tea.Msg) (*LogEditForm, tea.Cmd) {
 }
 
 func (f *LogEditForm) View() string {
-	help := subStyle.Render("ctrl+s: save • esc: cancel • tab: next field ")
+	help := subStyle.Render("esc: save & return • tab: next field ")
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		"",

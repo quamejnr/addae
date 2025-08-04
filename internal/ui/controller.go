@@ -15,6 +15,8 @@ const (
 	NoCoreCmd CoreCommand = iota
 	CoreRefreshProjects
 	CoreRefreshProjectView
+	CoreRefreshTasksView
+	CoreRefreshLogsView
 	CoreQuit
 	CoreShowError
 )
@@ -328,7 +330,7 @@ func (m *CoreModel) CreateTask(data TaskFormData) CoreCommand {
 	}
 
 	m.state = projectView
-	return CoreRefreshProjectView
+	return CoreRefreshTasksView
 }
 
 // CreateLog creates a new log for the selected project
@@ -344,7 +346,7 @@ func (m *CoreModel) CreateLog(data LogFormData) CoreCommand {
 	}
 
 	m.state = projectView
-	return CoreRefreshProjectView
+	return CoreRefreshLogsView
 }
 
 // UpdateLog updates the selected log
@@ -372,7 +374,7 @@ func (m *CoreModel) UpdateLog(data LogFormData) CoreCommand {
 	}
 
 	m.state = projectView
-	return CoreRefreshProjectView
+	return CoreRefreshLogsView
 }
 
 // DeleteLog deletes a log by its ID
@@ -394,7 +396,7 @@ func (m *CoreModel) DeleteLog(logID int) CoreCommand {
 	m.logs = logs
 
 	m.state = projectView
-	return CoreRefreshProjectView
+	return CoreRefreshLogsView
 }
 
 // ConfirmDeleteSelectedLog deletes the selected log if confirmed
@@ -426,7 +428,7 @@ func (m *CoreModel) ConfirmDeleteSelectedLog(confirmed bool) CoreCommand {
 	m.logs = logs
 
 	m.state = projectView
-	return CoreRefreshProjectView
+	return CoreRefreshLogsView
 }
 
 // ToggleTaskCompletion toggles the completion status of a task
@@ -465,7 +467,7 @@ func (m *CoreModel) ToggleTaskCompletion(taskID int, completedAt *time.Time) Cor
 	}
 	m.tasks = tasks
 
-	return CoreRefreshProjectView
+	return CoreRefreshTasksView
 }
 
 // SelectTask selects a task by index
@@ -556,7 +558,7 @@ func (m *CoreModel) DeleteTask(taskID int) CoreCommand {
 	}
 	m.tasks = tasks
 
-	return CoreRefreshProjectView
+	return CoreRefreshTasksView
 }
 
 func (m *CoreModel) RefreshProjectViewCmd() tea.Cmd {
@@ -564,3 +566,4 @@ func (m *CoreModel) RefreshProjectViewCmd() tea.Cmd {
 		return CoreRefreshProjectView
 	}
 }
+

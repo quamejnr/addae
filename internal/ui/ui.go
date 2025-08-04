@@ -290,17 +290,25 @@ func (m *Model) updateFullscreenLogEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Desc:  desc,
 			}
 			var coreCmd CoreCommand
-			if m.GetState() == updateLogView {
-				coreCmd = m.CoreModel.UpdateLog(data)
-			} else {
+			isCreating := m.GetState() != updateLogView
+			if isCreating {
 				coreCmd = m.CoreModel.CreateLog(data)
+			} else {
+				coreCmd = m.CoreModel.UpdateLog(data)
 			}
 
 			m.logEditForm = nil
 
 			switch coreCmd {
-			case CoreRefreshProjectView:
-				m.loadProjectDetails(m.list.Index())
+			case CoreRefreshLogsView:
+				m.refreshLogs()
+				if isCreating {
+					// After creating, move cursor to the new log at the end of the list
+					m.selectedLogIndex = len(m.CoreModel.GetLogs()) - 1
+				}
+				// Ensure the selected log pointer is synchronized
+				m.CoreModel.selectedLog = m.getLogAtIndex(m.selectedLogIndex)
+
 				// Re-render log content after editing
 				if log := m.CoreModel.GetSelectedLog(); log != nil {
 					rendered, err := m.glamourRenderer.Render(log.Desc)
@@ -335,7 +343,19 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 				title := strings.TrimSpace(m.quickTaskInput.Value())
 				if title != "" {
 					m.CoreModel.service.CreateTask(m.GetSelectedProject().ID, title, "")
-					m.loadProjectDetails(m.list.Index())
+					m.refreshTasks()
+
+					// After creating, move cursor to the new task
+					var pendingTasks []service.Task
+					for _, t := range m.CoreModel.GetTasks() {
+						if t.CompletedAt == nil {
+							pendingTasks = append(pendingTasks, t)
+						}
+					}
+					m.selectedTaskIndex = len(pendingTasks) - 1
+
+					// Ensure the selected task pointer is synchronized
+					m.CoreModel.selectedTask = m.getVisualTask(m.selectedTaskIndex)
 					m.quickTaskInput.SetValue("")
 				}
 				m.quickInputActive = false
@@ -416,8 +436,15 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, textinput.Blink
 			case key.Matches(msg, m.keys.ToggleCompleted) && m.activeTab == tasksTab:
 				m.showCompleted = !m.showCompleted
-				if !m.showCompleted && m.selectedTaskIndex > m.getMaxNavigableTaskIndex() {
-					m.selectedTaskIndex = m.getMaxNavigableTaskIndex()
+				maxIndex := m.getMaxNavigableTaskIndex()
+				if maxIndex < 0 {
+					m.selectedTaskIndex = 0
+					m.CoreModel.selectedTask = nil
+				} else {
+					if m.selectedTaskIndex > maxIndex {
+						m.selectedTaskIndex = maxIndex
+					}
+					m.CoreModel.selectedTask = m.getVisualTask(m.selectedTaskIndex)
 				}
 				return m, nil
 			case key.Matches(msg, m.keys.CreateLog):
@@ -812,8 +839,10 @@ func (m *Model) updateFormView(msg tea.Msg, formType string) (tea.Model, tea.Cmd
 			if err := m.CoreModel.RefreshProjects(); err == nil {
 				m.refreshListItems()
 			}
-		case CoreRefreshProjectView:
-			m.loadProjectDetails(m.list.Index())
+		case CoreRefreshTasksView:
+			m.refreshTasks()
+		case CoreRefreshLogsView:
+			m.refreshLogs()
 		case CoreQuit:
 			return m, tea.Quit
 		}
@@ -935,8 +964,33 @@ func (m *Model) updateConfirmDeleteDialog(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if err := m.CoreModel.RefreshProjects(); err == nil {
 						m.refreshListItems()
 					}
-				case CoreRefreshProjectView:
-					m.loadProjectDetails(m.list.Index())
+				case CoreRefreshTasksView:
+					m.refreshTasks()
+					maxIndex := m.getMaxNavigableTaskIndex()
+					if maxIndex < 0 {
+						m.selectedTaskIndex = 0
+						m.CoreModel.selectedTask = nil // No tasks left
+					} else {
+						if m.selectedTaskIndex > maxIndex {
+							m.selectedTaskIndex = maxIndex
+						}
+						// Resynchronize the selected task with the new index
+						m.CoreModel.selectedTask = m.getVisualTask(m.selectedTaskIndex)
+					}
+				case CoreRefreshLogsView:
+					m.refreshLogs()
+					logs := m.CoreModel.GetLogs()
+					maxLogIndex := len(logs) - 1
+					if maxLogIndex < 0 {
+						m.selectedLogIndex = 0
+						m.CoreModel.selectedLog = nil // No logs left
+					} else {
+						if m.selectedLogIndex > maxLogIndex {
+							m.selectedLogIndex = maxLogIndex
+						}
+						// Resynchronize the selected log with the new index
+						m.CoreModel.selectedLog = m.getLogAtIndex(m.selectedLogIndex)
+					}
 				}
 			}
 			return m, nil
@@ -967,6 +1021,25 @@ func (m *Model) refreshListItems() {
 		m.list.Select(idx)
 	}
 	m.loadProjectDetails(idx)
+}
+
+func (m *Model) refreshTasks() {
+	if m.CoreModel.selectedProject == nil {
+		return
+	}
+	if tasks, err := m.CoreModel.service.ListProjectTasks(m.CoreModel.selectedProject.ID); err == nil {
+		m.CoreModel.tasks = tasks
+	}
+}
+
+// refreshLogs refreshes the logs for the current project.
+func (m *Model) refreshLogs() {
+	if m.CoreModel.selectedProject == nil {
+		return
+	}
+	if logs, err := m.CoreModel.service.ListProjectLogs(m.CoreModel.selectedProject.ID); err == nil {
+		m.CoreModel.logs = logs
+	}
 }
 
 // loadProjectDetails loads the details of a project.
@@ -1017,6 +1090,9 @@ func (m *Model) getMaxNavigableTaskIndex() int {
 
 // getVisualTask returns the visual task at the given index.
 func (m *Model) getVisualTask(index int) *service.Task {
+	if index < 0 {
+		return nil
+	}
 	tasks := m.CoreModel.GetTasks()
 
 	var pending, completed []service.Task
