@@ -7,43 +7,62 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/pressly/goose/v3"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// InitDB initializes and returns a database connection.
+// If dbPath is empty, it will use a default OS-specific path.
 func InitDB(dbPath string) (*sql.DB, error) {
-	// Check if database file exists
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		// Create the database file
-		file, err := os.Create(dbPath)
+	if dbPath == "" {
+		var err error
+		dbPath, err = getDefaultDBPath()
 		if err != nil {
-			return nil, fmt.Errorf("error creating database file: %w", err)
+			return nil, fmt.Errorf("failed to get default DB path: %w", err)
 		}
-		file.Close()
 	}
 
-	// Open the database
-	db, err := sql.Open("sqlite3", dbPath)
+	// Construct the DSN to automatically create the file and enable foreign keys
+	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_foreign_keys=ON", dbPath)
+
+	// Open the database connection
+	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("error opening database: %w", err)
 	}
 
+	// Use defer to ensure the database connection is closed on error
+	// If the function returns successfully, the caller is responsible for closing db.
+	defer func() {
+		if err != nil {
+			db.Close()
+		}
+	}()
+
 	// Test the connection
-	if err := db.Ping(); err != nil {
-		db.Close()
+	if err = db.Ping(); err != nil {
 		return nil, fmt.Errorf("error connecting to database: %w", err)
 	}
 
-	// Enable foreign key support
-	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	return db, nil
+}
+
+// getDefaultDBPath returns the default OS-specific path for the database file.
+func getDefaultDBPath() (string, error) {
+	configDir, err := os.UserConfigDir()
 	if err != nil {
-		db.Close()
-		return nil, fmt.Errorf("error enabling foreign keys: %w", err)
+		return "", fmt.Errorf("failed to get user config directory: %w", err)
 	}
 
-	return db, nil
+	appDir := filepath.Join(configDir, "addae")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create application directory: %w", err)
+	}
+
+	return filepath.Join(appDir, "addae.db"), nil
 }
 
 func RunMigrations(db *sql.DB, migrationsDir string) error {

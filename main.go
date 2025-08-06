@@ -18,7 +18,7 @@ var migrationsFS embed.FS
 
 func main() {
 	// Initialize database
-	database, err := db.InitDB("./addae.db")
+	database, err := db.InitDB("")
 	if err != nil {
 		fmt.Println(err)
 		return
