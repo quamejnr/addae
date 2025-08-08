@@ -502,9 +502,6 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.taskDetailMode {
 			case taskDetailNone:
 				model, cmd := m.updateTasksList(msg)
-				if m.CoreModel.GetSelectedTask() != nil && m.taskDetailMode != taskDetailEdit {
-					m.taskDetailMode = taskDetailReadonly
-				}
 				return model, cmd
 			case taskDetailReadonly:
 				switch {

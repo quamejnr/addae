@@ -19,7 +19,7 @@ go.work
 
 # Addae specific
 addae
-addae.db
+addae.db*
 log.md
 
 # OS-generated files
