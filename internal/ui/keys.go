@@ -19,7 +19,6 @@ type ProjectKeyMap struct {
 	CursorUp        key.Binding
 	CursorDown      key.Binding
 	Edit            key.Binding
-	SwitchFocus     key.Binding
 	ToggleCompleted key.Binding
 	CreateObject    key.Binding
 	CreateTask      key.Binding
@@ -38,11 +37,11 @@ func (k ProjectKeyMap) FullHelp() [][]key.Binding {
 		// navigation
 		{
 			k.TabLeft, k.TabRight, k.GotoDetails, k.GotoTasks,
-			k.GotoLogs, k.CursorUp, k.CursorDown, k.SwitchFocus, k.Back,
+			k.GotoLogs, k.CursorUp, k.CursorDown, k.Back,
 		},
 		// actions
 		{
-			k.CreateObject, k.UpdateProject, k.CreateTask, k.CreateLog, k.Edit,
+			k.SelectObject, k.CreateObject, k.UpdateProject, k.CreateTask, k.CreateLog, k.Edit,
 			k.ToggleDone, k.ToggleCompleted, k.DeleteObject,
 		},
 		// help
@@ -81,8 +80,8 @@ var projectKeys = ProjectKeyMap{
 		key.WithHelp("←/ctrl+h", "previous tab"),
 	),
 	TabRight: key.NewBinding(
-		key.WithKeys("right", "ctrl+l"),
-		key.WithHelp("→/ctrl+l", "next tab"),
+		key.WithKeys("right", "ctrl+l", "tab"),
+		key.WithHelp("→/ctrl+l/tab", "next tab"),
 	),
 	Back: key.NewBinding(
 		key.WithKeys("esc", "b", "ctrl+c"),
@@ -102,7 +101,7 @@ var projectKeys = ProjectKeyMap{
 	),
 	SelectObject: key.NewBinding(
 		key.WithKeys("enter"),
-		key.WithHelp("enter", "select object"),
+		key.WithHelp("enter", "select object / switch focus"),
 	),
 	CursorUp: key.NewBinding(
 		key.WithKeys("up", "k"),
@@ -119,10 +118,6 @@ var projectKeys = ProjectKeyMap{
 	CreateObject: key.NewBinding(
 		key.WithKeys("n"),
 		key.WithHelp("n", "create object"),
-	),
-	SwitchFocus: key.NewBinding(
-		key.WithKeys("tab"),
-		key.WithHelp("tab", "switch focus"),
 	),
 	ToggleCompleted: key.NewBinding(
 		key.WithKeys("c"),

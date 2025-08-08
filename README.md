@@ -87,7 +87,7 @@ Addae uses Vim-style keybindings for navigation. Here are the most common comman
 | `1`              | Show details            |
 | `2`              | Show tasks              |
 | `3`              | Show logs               |
-| `enter`          | Select object           |
+| `enter`          | Select object / switch focus           |
 | `n`              | Create object           |
 | `t`              | Create task             |
 | `l`              | Create log              |
@@ -96,12 +96,9 @@ Addae uses Vim-style keybindings for navigation. Here are the most common comman
 | `e`              | Edit                    |
 | `space`          | Toggle done             |
 | `c`              | Toggle completed        |
-| `tab`            | Switch focus            |
 | `?`              | Toggle help             |
 | `esc` / `b` / `ctrl+c`| Back                    |
 
-> [!NOTE]
-> In the log view, `enter` and `tab` will switch focus to the pager, while `esc`/`b` will switch focus back to the list.
 
 ## 🤝 Contributing
 

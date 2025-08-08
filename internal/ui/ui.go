@@ -373,7 +373,7 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle log viewport navigation when in pager focus
 		if m.activeTab == logsTab && m.logDetailMode == logDetailReadonly && m.logViewFocus == focusForm {
 			switch {
-			case key.Matches(msg, m.keys.SwitchFocus), key.Matches(msg, m.keys.Back):
+			case key.Matches(msg, m.keys.SelectObject), key.Matches(msg, m.keys.Back):
 				m.logViewFocus = focusList
 				return m, nil
 			case key.Matches(msg, m.keys.Edit):
@@ -655,7 +655,7 @@ func (m *Model) updateProjectViewCommon(msg tea.Msg) (tea.Model, tea.Cmd) {
 								m.logViewport.GotoTop()
 							}
 						}
-					case key.Matches(msg, m.keys.SwitchFocus), key.Matches(msg, m.keys.SelectObject):
+					case key.Matches(msg, m.keys.SelectObject), key.Matches(msg, m.keys.SelectObject):
 						m.logViewFocus = focusForm
 						return m, nil
 
