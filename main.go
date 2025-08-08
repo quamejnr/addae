@@ -2,8 +2,10 @@ package main
 
 import (
 	"embed"
+	"flag"
 	"fmt"
 	"io/fs"
+	"os"
 
 	"github.com/quamejnr/addae/internal/service"
 	"github.com/quamejnr/addae/internal/ui"
@@ -13,10 +15,22 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+var version = "dev"
+
 //go:embed internal/db/migrations/*.sql
 var migrationsFS embed.FS
 
 func main() {
+	var showVersion bool
+
+	flag.BoolVar(&showVersion, "version", false, "Print version information")
+	flag.Parse()
+
+	if showVersion {
+		fmt.Printf("addae version %s\n", version)
+		os.Exit(0)
+	}
+
 	// Initialize database
 	database, err := db.InitDB("")
 	if err != nil {
