@@ -1,8 +1,10 @@
 # .goreleaser.yml
+version: 2
+
 builds:
   - env:
     - CGO_ENABLED=0
-  - main: main.go
+    main: main.go
     ldflags:
       - -s -w -X main.version={{.Version}}
     goos:
@@ -18,8 +20,6 @@ archives:
     name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
 checksum:
   name_template: 'checksums.txt'
-snapshot:
-  name_template: "{{ incpatch .Version }}-next"
 changelog:
   sort: asc
   filters:
