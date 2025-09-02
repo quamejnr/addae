@@ -11,7 +11,7 @@ import (
 
 	"github.com/pressly/goose/v3"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // InitDB initializes and returns a database connection.
@@ -29,7 +29,7 @@ func InitDB(dbPath string) (*sql.DB, error) {
 	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_foreign_keys=ON", dbPath)
 
 	// Open the database connection
-	db, err := sql.Open("sqlite3", dsn)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("error opening database: %w", err)
 	}
@@ -68,7 +68,7 @@ func getDefaultDBPath() (string, error) {
 func RunMigrations(db *sql.DB, migrationsDir string) error {
 	// goose.SetBaseFS(embedMigrations)
 
-	if err := goose.SetDialect("sqlite3"); err != nil {
+	if err := goose.SetDialect("sqlite"); err != nil {
 		return fmt.Errorf("migration failed: %w", err)
 	}
 
@@ -85,7 +85,7 @@ func RunMigrations(db *sql.DB, migrationsDir string) error {
 }
 
 func RunMigrationsFromFS(db *sql.DB, migrationsFS fs.FS) error {
-	if err := goose.SetDialect("sqlite3"); err != nil {
+	if err := goose.SetDialect("sqlite"); err != nil {
 		return err
 	}
 
